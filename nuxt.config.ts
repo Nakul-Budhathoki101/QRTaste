@@ -1,12 +1,16 @@
 export default defineNuxtConfig({
-  css: ['~/assets/css/main.css'],
+  css: ["~/assets/css/main.css"],
 
-  modules: [
-    '@pinia/nuxt',
-    '@nuxtjs/tailwindcss'
-  ],
+  modules: ["@pinia/nuxt", "@nuxtjs/tailwindcss"],
 
   devtools: {
-    enabled: true
-  }
-})
+    enabled: true,
+  },
+
+  runtimeConfig: {
+    public: {
+      supabaseUrl: process.env.SUPABASE_URL,
+      supabaseKey: process.env.SUPABASE_KEY,
+    },
+  },
+});

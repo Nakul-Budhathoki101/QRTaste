@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "name": "Ramen",
+    "description": "Delicious Japanese ramen.",
+    "price": 1200,
+    "image": "https://picsum.photos/300/200"
+  },
+  {
+    "id": 2,
+    "name": "Sushi",
+    "description": "Fresh sushi platter.",
+    "price": 1800,
+    "image": "https://picsum.photos/301/200"
+  },
+  {
+    "id": 3,
+    "name": "Gyoza",
+    "description": "Crispy fried dumplings.",
+    "price": 700,
+    "image": "https://picsum.photos/302/200"
+  }
+]

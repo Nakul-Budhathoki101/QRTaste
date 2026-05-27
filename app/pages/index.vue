@@ -8,6 +8,12 @@ import TableSessionModal from "~/components/TableSessionModal.vue";
 import TableQrModal from "~/components/TableQrModal.vue";
 import SettingModal from "~/components/SettingModal.vue";
 
+import { useSupabase } from "~/lib/supabase";
+
+const supabase = useSupabase();
+
+import { useOrderStore } from "~/stores/order";
+
 type TableStatus = "available" | "occupied" | "reserved" | "cleaning";
 
 interface RestaurantTable {
@@ -27,8 +33,10 @@ const selectedTable = ref<RestaurantTable | null>(null);
 
 const settingsStore = useSettingsStore();
 const tableStore = useTableStore();
+const orderStore = useOrderStore();
 
 const showSettings = ref(false);
+const orders = ref<any[]>([]);
 
 const qrTableName = ref("");
 
@@ -36,10 +44,37 @@ const openQr = (tableName: string) => {
   qrTableName.value = tableName;
 };
 
-onMounted(() => {
+const fetchOrders = async () => {
+  const { data } = await supabase
+    .from("orders")
+    .select("*")
+    .in("status", ["pending", "preparing"])
+    .order("created_at", {
+      ascending: false,
+    });
+
+  orders.value = data || [];
+};
+
+onMounted(async () => {
+  await fetchOrders();
   interval = setInterval(() => {
     currentTime.value = Date.now();
   }, 1000);
+  supabase
+    .channel("orders-channel")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "orders",
+      },
+      async () => {
+        await fetchOrders();
+      },
+    )
+    .subscribe();
 });
 
 onUnmounted(() => {
@@ -123,6 +158,19 @@ const getTableColor = (table: RestaurantTable) => {
       return "bg-gray-500";
   }
 };
+
+const updateOrderStatus = async (orderId: number, status: string) => {
+  const { error } = await supabase
+    .from("orders")
+    .update({
+      status,
+    })
+    .eq("id", orderId);
+
+  if (error) {
+    console.error(error);
+  }
+};
 </script>
 
 <template>
@@ -179,6 +227,84 @@ const getTableColor = (table: RestaurantTable) => {
         >
           📱 QR Code
         </button>
+      </div>
+    </div>
+
+    <!-- KITCHEN PANEL -->
+    <div class="mt-10">
+      <h2 class="text-4xl font-bold mb-6">🍳 Kitchen Orders</h2>
+
+      <div class="grid grid-cols-3 gap-4">
+        <div
+          v-for="order in orders"
+          :key="order.id"
+          class="bg-white rounded-3xl p-6 shadow-xl"
+        >
+          <!-- HEADER -->
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h3 class="text-2xl font-bold">
+                Table
+                {{ order.tableName }}
+              </h3>
+
+              <p class="text-gray-500">
+                {{ new Date(order.createdAt).toLocaleTimeString() }}
+              </p>
+            </div>
+
+            <!-- STATUS -->
+            <div
+              class="px-4 py-2 rounded-full text-white font-bold"
+              :class="{
+                'bg-red-500 animate-pulse': order.status === 'pending',
+
+                'bg-yellow-400 text-black': order.status === 'preparing',
+              }"
+            >
+              {{ order.status }}
+            </div>
+          </div>
+
+          <!-- ITEMS -->
+          <div
+            v-for="item in order.items"
+            :key="item.id"
+            class="flex justify-between mb-2"
+          >
+            <span>
+              {{ item.name }}
+            </span>
+
+            <span> x{{ item.quantity }} </span>
+          </div>
+
+          <!-- TOTAL -->
+          <div
+            class="mt-4 pt-4 border-t flex justify-between text-xl font-bold"
+          >
+            <span>Total</span>
+
+            <span> ¥{{ order.totalPrice }} </span>
+          </div>
+
+          <!-- ACTIONS -->
+          <div class="flex gap-2 mt-6">
+            <button
+              class="flex-1 bg-blue-500 text-white py-2 rounded-xl"
+              @click="updateOrderStatus(order.id, 'preparing')"
+            >
+              Preparing
+            </button>
+
+            <button
+              class="flex-1 bg-green-500 text-white py-2 rounded-xl"
+              @click="updateOrderStatus(order.id, 'completed')"
+            >
+              Completed
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -1,43 +1,49 @@
 <script setup lang="ts">
 import { useTableStore } from "#imports";
 import { useCartStore } from "#imports";
+import { useOrderStore } from "~/stores/order";
+import { useSupabase } from "~/lib/supabase";
+
+import menuItems from "~/data/menu.json";
 
 const tableStore = useTableStore();
 const cartStore = useCartStore();
+const orderStore = useOrderStore();
+const supabase = useSupabase();
 
 const route = useRoute();
 
 const tableName = route.params.table;
+const showCart = ref(false);
 
 const tableData = tableStore.tables.find((table) => table.name === tableName);
 
-const isInvalidTable = !tableData || tableData.status !== "occupied";
+const submitOrder = async () => {
+  if (!cartStore.items.length) return;
 
-const menuItems = [
-  {
-    id: 1,
-    name: "Ramen",
-    description: "Delicious Japanese ramen.",
-    price: 1200,
-    image: "https://picsum.photos/300/200",
-  },
+  const { error } = await supabase.from("orders").insert([
+    {
+      table_name: String(tableName),
 
-  {
-    id: 2,
-    name: "Sushi",
-    description: "Fresh sushi platter.",
-    price: 1800,
-    image: "https://picsum.photos/301/200",
-  },
+      items: cartStore.items,
 
-  {
-    id: 3,
-    name: "Gyoza",
-    description: "Crispy fried dumplings.",
-    price: 700,
-    image: "https://picsum.photos/302/200",
-  },
-];
+      total_price: cartStore.totalPrice,
+
+      status: "pending",
+    },
+  ]);
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  cartStore.clearCart();
+
+  showCart.value = false;
+
+  alert("Order submitted!");
+};
 </script>
 
 <template>
@@ -73,63 +79,86 @@ const menuItems = [
   </div>
 
   <!-- CART -->
-  <div
-    class="fixed bottom-4 right-4 bg-white rounded-2xl shadow-2xl p-6 w-[350px]"
+  <!-- FLOATING CART -->
+  <button
+    class="fixed bottom-6 right-6 bg-black text-white w-16 h-16 rounded-full shadow-2xl flex items-center justify-center text-2xl"
+    @click="showCart = true"
   >
-    <h2 class="text-2xl font-bold mb-4">🛒 Cart</h2>
+    🛒
 
-    <!-- EMPTY -->
-    <div v-if="cartStore.items.length === 0" class="text-gray-400">
-      Cart is empty
-    </div>
-
-    <!-- ITEMS -->
+    <!-- BADGE -->
     <div
-      v-for="item in cartStore.items"
-      :key="item.id"
-      class="flex justify-between items-center mb-3"
+      v-if="cartStore.items.length"
+      class="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-bold"
     >
-      <div>
-        <div class="font-bold">
-          {{ item.name }}
+      {{ cartStore.items.reduce((total, item) => total + item.quantity, 0) }}
+    </div>
+  </button>
+
+  <!-- CART MODAL -->
+  <div v-if="showCart" class="fixed inset-0 bg-black/40 flex justify-end">
+    <div class="bg-white w-[400px] h-full p-6 overflow-y-auto">
+      <!-- HEADER -->
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-3xl font-bold">🛒 Cart</h2>
+
+        <button class="text-2xl" @click="showCart = false">✕</button>
+      </div>
+
+      <!-- EMPTY -->
+      <div v-if="cartStore.items.length === 0" class="text-gray-400">
+        Cart is empty
+      </div>
+
+      <!-- ITEMS -->
+      <div
+        v-for="item in cartStore.items"
+        :key="item.id"
+        class="flex justify-between items-center mb-4 border-b pb-4"
+      >
+        <div>
+          <div class="font-bold">
+            {{ item.name }}
+          </div>
+
+          <div class="text-gray-500">¥{{ item.price }}</div>
         </div>
 
-        <div class="text-sm text-gray-500">¥{{ item.price }}</div>
+        <div class="flex items-center gap-2">
+          <button
+            class="bg-gray-200 w-8 h-8 rounded-full"
+            @click="cartStore.decreaseItem(item.id)"
+          >
+            -
+          </button>
+
+          <span>
+            {{ item.quantity }}
+          </span>
+
+          <button
+            class="bg-black text-white w-8 h-8 rounded-full"
+            @click="cartStore.addItem(item)"
+          >
+            +
+          </button>
+        </div>
       </div>
 
-      <div class="flex items-center gap-2">
-        <button
-          class="bg-gray-200 w-8 h-8 rounded-full"
-          @click="cartStore.decreaseItem(item.id)"
-        >
-          -
-        </button>
+      <!-- TOTAL -->
+      <div class="mt-6 pt-6 border-t flex justify-between text-2xl font-bold">
+        <span>Total</span>
 
-        <span>
-          {{ item.quantity }}
-        </span>
-
-        <button
-          class="bg-black text-white w-8 h-8 rounded-full"
-          @click="cartStore.addItem(item)"
-        >
-          +
-        </button>
+        <span> ¥{{ cartStore.totalPrice }} </span>
       </div>
+
+      <!-- ORDER BUTTON -->
+      <button
+        class="w-full mt-6 bg-green-500 text-white py-4 rounded-2xl text-xl font-bold"
+        @click="submitOrder"
+      >
+        Submit Order
+      </button>
     </div>
-
-    <!-- TOTAL -->
-    <div class="border-t pt-4 mt-4 flex justify-between font-bold text-xl">
-      <span>Total</span>
-
-      <span> ¥{{ cartStore.totalPrice }} </span>
-    </div>
-
-    <!-- SUBMIT -->
-    <button
-      class="w-full mt-6 bg-green-500 text-white py-3 rounded-xl font-bold"
-    >
-      Submit Order
-    </button>
   </div>
 </template>
