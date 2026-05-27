@@ -7,11 +7,12 @@ const props = defineProps<{
 }>();
 
 const qrCodeUrl = ref("");
+const tableUrl = ref("");
 
 const generateQr = async () => {
-  const tableUrl = `https://qr-taste.vercel.app/order/${props.tableName}`;
+  tableUrl.value = `https://qr-taste.vercel.app/order/${props.tableName}`;
 
-  qrCodeUrl.value = await QRCode.toDataURL(tableUrl);
+  qrCodeUrl.value = await QRCode.toDataURL(tableUrl.value);
 };
 
 onMounted(() => {
@@ -30,7 +31,7 @@ onMounted(() => {
 
       <div class="mt-6 text-center">
         <p class="text-gray-500 break-all">
-          http://localhost:3000/order/{{ tableName }}
+          {{ tableUrl }}
         </p>
       </div>
 
