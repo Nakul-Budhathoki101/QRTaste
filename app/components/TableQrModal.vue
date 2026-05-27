@@ -9,7 +9,7 @@ const props = defineProps<{
 const qrCodeUrl = ref("");
 
 const generateQr = async () => {
-  const tableUrl = `http://192.168.1.6:3000/order/${props.tableName}`;
+  const tableUrl = `https://qr-taste.vercel.app/order/${props.tableName}`;
 
   qrCodeUrl.value = await QRCode.toDataURL(tableUrl);
 };
