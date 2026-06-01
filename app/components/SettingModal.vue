@@ -35,6 +35,13 @@ const settingsStore = useSettingsStore();
         />
       </div>
 
+      <NuxtLink
+        to="/admin/menu"
+        class="bg-green-500 text-white px-4 py-2 rounded-lg"
+      >
+        Menu Management
+      </NuxtLink>
+
       <div class="flex justify-end">
         <button
           class="bg-blue-500 text-white px-4 py-2 rounded-lg"

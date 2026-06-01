@@ -100,6 +100,8 @@ const formatTime = (seconds: number) => {
 
 const openTableModal = (table: RestaurantTable) => {
   selectedTable.value = table;
+
+  console.log('muji',table)
 };
 const closeModal = () => {
   selectedTable.value = null;
@@ -115,6 +117,18 @@ const startSession = (payload: {
   selectedTable.value.customerCount = payload.customerCount;
   selectedTable.value.timeLimit = payload.timeLimit;
   selectedTable.value.startTime = new Date().toISOString();
+
+  closeModal();
+};
+
+const updateSession = (payload: {
+  customerCount: number;
+  timeLimit?: number;
+}) => {
+  if (!selectedTable.value) return;
+
+  selectedTable.value.customerCount = payload.customerCount;
+  selectedTable.value.timeLimit = payload.timeLimit;
 
   closeModal();
 };
@@ -179,6 +193,16 @@ const newTableName = ref("");
 const handleAddTable = () => {
   if (!newTableName.value.trim()) return;
 
+  const exists = tableStore.tables.some(
+    (table) =>
+      String(table.name).toLowerCase() === newTableName.value.toLowerCase(),
+  );
+
+  if (exists) {
+    alert("Table already exists");
+    return;
+  }
+
   tableStore.addTable(newTableName.value.trim());
 
   newTableName.value = "";
@@ -210,7 +234,7 @@ const handleAddTable = () => {
         :class="getTableColor(table)"
         @click="openTableModal(table)"
       >
-        <h2 class="text-2xl font-bold">Table {{ table.name }}</h2>
+        <h2 class="text-2xl font-bold">{{ table.name }}</h2>
 
         <!-- <p class="mt-2">Seats: {{ table.seats }}</p> -->
 
@@ -367,6 +391,7 @@ const handleAddTable = () => {
       :table="selectedTable"
       @close="closeModal"
       @start="startSession"
+      @update="updateSession"
     />
 
     <SettingModal v-if="showSettings" @close="showSettings = false" />

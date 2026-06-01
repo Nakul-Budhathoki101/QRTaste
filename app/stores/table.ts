@@ -12,141 +12,132 @@ export interface RestaurantTable {
   timeLimit?: number;
 }
 
-export const useTableStore = defineStore("table", {
-  state: () => ({
-    // tables: [
-    //   {
-    //     id: 1,
-    //     name: "A1",
-    //     seats: 4,
-    //     status: "available",
-    //   },
+export const useTableStore = defineStore("table", () => {
+  const tables = useState<RestaurantTable[]>("tables", () => []);
 
-    //   {
-    //     id: 2,
-    //     name: "A2",
-    //     seats: 4,
-    //     status: "available",
-    //   },
+  const saveTables = () => {
+    localStorage.setItem("restaurant_tables", JSON.stringify(tables.value));
+  };
 
-    //   {
-    //     id: 3,
-    //     name: "B1",
-    //     seats: 4,
-    //     status: "available",
-    //   },
+  const loadTables = () => {
+    const saved = localStorage.getItem("restaurant_tables");
 
-    //   {
-    //     id: 4,
-    //     name: "B2",
-    //     seats: 4,
-    //     status: "available",
-    //   },
-    //   {
-    //     id: 5,
-    //     name: "XXX",
-    //     seats: 4,
-    //     status: "available",
-    //   },
-    // ] as RestaurantTable[],
-    tables: [] as RestaurantTable[],
-  }),
+    if (saved) {
+      tables.value = JSON.parse(saved);
+      return;
+    }
 
-  actions: {
-    loadTables() {
-      const saved = localStorage.getItem("restaurant_tables");
-
-      if (saved) {
-        this.tables = JSON.parse(saved);
-        return;
-      }
-
-      this.tables = [
-        {
-          id: 1,
-          name: "A1",
-          status: "available",
-          customerCount: 0,
-          seats: 1,
-        },
-        {
-          id: 2,
-          name: "A2",
-          status: "available",
-          customerCount: 0,
-          seats: 1,
-        },
-      ];
-
-      this.saveTables();
-    },
-    addTable(name: string) {
-      this.tables.push({
-        id: Date.now(),
-        name,
+    tables.value = [
+      {
+        id: 1,
+        name: "A1",
         status: "available",
         customerCount: 0,
         seats: 1,
-      });
-
-      this.saveTables();
-    },
-    saveTables() {
-      localStorage.setItem("restaurant_tables", JSON.stringify(this.tables));
-    },
-    removeTable(id: number) {
-      this.tables = this.tables.filter((table) => table.id !== id);
-
-      this.saveTables();
-    },
-    startSession(
-      tableId: number,
-      payload: {
-        customerCount: number;
-        timeLimit?: number;
       },
-    ) {
-      const table = this.tables.find((t) => t.id === tableId);
-
-      if (!table) return;
-
-      table.status = "occupied";
-      table.customerCount = payload.customerCount;
-      table.timeLimit = payload.timeLimit;
-      table.startTime = new Date().toISOString();
-    },
-    updateSession(
-      tableId: number,
-      payload: {
-        customerCount: number;
-        timeLimit?: number;
+      {
+        id: 2,
+        name: "A2",
+        status: "available",
+        customerCount: 0,
+        seats: 1,
       },
-    ) {
-      const table = this.tables.find((t) => t.id === tableId);
+    ];
 
-      if (!table) return;
+    saveTables();
+  };
 
-      table.customerCount = payload.customerCount;
+  const addTable = (name: string) => {
+    tables.value.push({
+      id: Date.now(),
+      name,
+      status: "available",
+      customerCount: 0,
+      seats: 1,
+    });
 
-      table.timeLimit = payload.timeLimit;
+    saveTables();
+  };
+
+  const removeTable = (id: number) => {
+    tables.value = tables.value.filter((table) => table.id !== id);
+
+    saveTables();
+  };
+
+  const startSession = (
+    tableId: number,
+    payload: {
+      customerCount: number;
+      timeLimit?: number;
     },
-    setCleaning(tableId: number) {
-      const table = this.tables.find((t) => t.id === tableId);
+  ) => {
+    const table = tables.value.find((t) => t.id === tableId);
 
-      if (!table) return;
+    if (!table) return;
 
-      table.status = "cleaning";
+    table.status = "occupied";
+    table.customerCount = payload.customerCount;
+    table.timeLimit = payload.timeLimit;
+    table.startTime = new Date().toISOString();
+
+    saveTables();
+  };
+
+  const updateSession = (
+    tableId: number,
+    payload: {
+      customerCount: number;
+      timeLimit?: number;
     },
+  ) => {
+    const table = tables.value.find((t) => t.id === tableId);
 
-    resetTable(tableId: number) {
-      const table = this.tables.find((t) => t.id === tableId);
+    if (!table) return;
 
-      if (!table) return;
+    table.customerCount = payload.customerCount;
+    table.timeLimit = payload.timeLimit;
 
-      table.status = "available";
-      table.customerCount = undefined;
-      table.timeLimit = undefined;
-      table.startTime = undefined;
-    },
-  },
+    saveTables();
+  };
+
+  const setCleaning = (tableId: number) => {
+    const table = tables.value.find((t) => t.id === tableId);
+
+    if (!table) return;
+
+    table.status = "cleaning";
+    table.startTime = undefined;
+
+    saveTables();
+  };
+
+  const resetTable = (tableId: number) => {
+    const table = tables.value.find((t) => t.id === tableId);
+
+    if (!table) return;
+
+    table.status = "available";
+    table.customerCount = undefined;
+    table.timeLimit = undefined;
+    table.startTime = undefined;
+
+    saveTables();
+  };
+
+  return {
+    tables,
+
+    loadTables,
+    saveTables,
+
+    addTable,
+    removeTable,
+
+    startSession,
+    updateSession,
+
+    setCleaning,
+    resetTable,
+  };
 });

@@ -1,49 +1,25 @@
-import { defineStore } from 'pinia'
+import { defineStore } from "pinia";
 
-export type OrderStatus =
-  | 'pending'
-  | 'preparing'
-  | 'completed'
+import type { OrderStatus, Order, OrderItem } from "~/types";
 
-export interface OrderItem {
-  id: number
-  name: string
-  price: number
-  quantity: number
-}
+export const useOrderStore = defineStore("order", () => {
+  const orders = ref<Order[]>([]);
 
-export interface Order {
-  id: number
-  tableName: string
-  items: OrderItem[]
-  totalPrice: number
-  status: OrderStatus
-  createdAt: string
-}
+  const createOrder = (order: Order) => {
+    orders.value.unshift(order);
+  };
 
-export const useOrderStore =
-  defineStore('order', {
-    state: () => ({
-      orders: [] as Order[]
-    }),
+  const updateStatus = (orderId: number, status: OrderStatus) => {
+    const order = orders.value.find((o) => o.id === orderId);
 
-    actions: {
-      createOrder(order: Order) {
-        this.orders.unshift(order)
-      },
+    if (!order) return;
 
-      updateStatus(
-        orderId: number,
-        status: OrderStatus
-      ) {
-        const order =
-          this.orders.find(
-            o => o.id === orderId
-          )
+    order.status = status;
+  };
 
-        if (!order) return
-
-        order.status = status
-      }
-    }
-  })
+  return {
+    orders,
+    createOrder,
+    updateStatus,
+  };
+});
