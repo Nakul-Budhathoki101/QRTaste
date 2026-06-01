@@ -14,44 +14,91 @@ export interface RestaurantTable {
 
 export const useTableStore = defineStore("table", {
   state: () => ({
-    tables: [
-      {
-        id: 1,
-        name: "A1",
-        seats: 4,
-        status: "available",
-      },
+    // tables: [
+    //   {
+    //     id: 1,
+    //     name: "A1",
+    //     seats: 4,
+    //     status: "available",
+    //   },
 
-      {
-        id: 2,
-        name: "A2",
-        seats: 4,
-        status: "available",
-      },
+    //   {
+    //     id: 2,
+    //     name: "A2",
+    //     seats: 4,
+    //     status: "available",
+    //   },
 
-      {
-        id: 3,
-        name: "B1",
-        seats: 4,
-        status: "available",
-      },
+    //   {
+    //     id: 3,
+    //     name: "B1",
+    //     seats: 4,
+    //     status: "available",
+    //   },
 
-      {
-        id: 4,
-        name: "B2",
-        seats: 4,
-        status: "available",
-      },
-      {
-        id: 5,
-        name: "XXX",
-        seats: 4,
-        status: "available",
-      },
-    ] as RestaurantTable[],
+    //   {
+    //     id: 4,
+    //     name: "B2",
+    //     seats: 4,
+    //     status: "available",
+    //   },
+    //   {
+    //     id: 5,
+    //     name: "XXX",
+    //     seats: 4,
+    //     status: "available",
+    //   },
+    // ] as RestaurantTable[],
+    tables: [] as RestaurantTable[],
   }),
 
   actions: {
+    loadTables() {
+      const saved = localStorage.getItem("restaurant_tables");
+
+      if (saved) {
+        this.tables = JSON.parse(saved);
+        return;
+      }
+
+      this.tables = [
+        {
+          id: 1,
+          name: "A1",
+          status: "available",
+          customerCount: 0,
+          seats: 1,
+        },
+        {
+          id: 2,
+          name: "A2",
+          status: "available",
+          customerCount: 0,
+          seats: 1,
+        },
+      ];
+
+      this.saveTables();
+    },
+    addTable(name: string) {
+      this.tables.push({
+        id: Date.now(),
+        name,
+        status: "available",
+        customerCount: 0,
+        seats: 1,
+      });
+
+      this.saveTables();
+    },
+    saveTables() {
+      localStorage.setItem("restaurant_tables", JSON.stringify(this.tables));
+    },
+    removeTable(id: number) {
+      this.tables = this.tables.filter((table) => table.id !== id);
+
+      this.saveTables();
+    },
     startSession(
       tableId: number,
       payload: {

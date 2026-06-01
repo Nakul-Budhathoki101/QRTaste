@@ -57,6 +57,7 @@ const fetchOrders = async () => {
 };
 
 onMounted(async () => {
+  tableStore.loadTables();
   await fetchOrders();
   interval = setInterval(() => {
     currentTime.value = Date.now();
@@ -171,6 +172,18 @@ const updateOrderStatus = async (orderId: number, status: string) => {
     console.error(error);
   }
 };
+
+const showAddTableModal = ref(false);
+const newTableName = ref("");
+
+const handleAddTable = () => {
+  if (!newTableName.value.trim()) return;
+
+  tableStore.addTable(newTableName.value.trim());
+
+  newTableName.value = "";
+  showAddTableModal.value = false;
+};
 </script>
 
 <template>
@@ -227,6 +240,46 @@ const updateOrderStatus = async (orderId: number, status: string) => {
         >
           📱 QR Code
         </button>
+      </div>
+    </div>
+
+    <!-- ADD TABLE -->
+
+    <button
+      class="px-4 py-2 bg-red-500 rounded-lg mt-3"
+      @click="showAddTableModal = true"
+    >
+      ADD TABLE
+    </button>
+
+    <div
+      v-if="showAddTableModal"
+      class="fixed inset-0 bg-black/50 flex items-center justify-center"
+    >
+      <div class="bg-white p-6 rounded-xl w-[400px]">
+        <h2 class="text-2xl font-bold mb-4">Add Table</h2>
+
+        <input
+          v-model="newTableName"
+          placeholder="Example: A1"
+          class="w-full border p-3 rounded-lg mb-4"
+        />
+
+        <div class="flex justify-end gap-2">
+          <button
+            class="px-4 py-2 bg-gray-300 rounded-lg"
+            @click="showAddTableModal = false"
+          >
+            Cancel
+          </button>
+
+          <button
+            class="px-4 py-2 bg-green-500 text-white rounded-lg"
+            @click="handleAddTable"
+          >
+            Add
+          </button>
+        </div>
       </div>
     </div>
 

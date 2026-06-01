@@ -22,23 +22,36 @@ const tableStore = useTableStore();
 const localCustomerCount = ref(props.table.customerCount ?? 1);
 
 const localTimeLimit = ref(props.table.timeLimit ?? settings.defaultTimeLimit);
-const enableTimeLimit = ref(!!props.table.timeLimit);
+
+const enableTimeLimit = ref(props.table.startTime ?? false);
 
 const isExistingSession = props.table.status === "occupied";
+
+const decidedTimeLimit = () => {
+  return enableTimeLimit.value ? localTimeLimit.value : undefined;
+};
 
 const handleStartSession = () => {
   emit("start", {
     customerCount: localCustomerCount.value,
-    timeLimit: enableTimeLimit.value ? localTimeLimit.value : undefined,
+    timeLimit: decidedTimeLimit(),
   });
+};
+
+const enableTimeLimitHR = () => {
+  enableTimeLimit.value = !enableTimeLimit.value;
 };
 </script>
 
 <template>
+
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center">
     <div
       class="bg-white rounded-3xl p-8 w-[420px] text-black shadow-2xl border border-gray-100"
     >
+
+    {{ props }}
+
       <h2 class="text-2xl font-bold mb-6">Table {{ table.name }}</h2>
 
       <!-- CUSTOMER COUNT -->
@@ -52,20 +65,19 @@ const handleStartSession = () => {
         />
       </div>
 
-      <div class="mb-4 flex items-center gap-2">
-        <input v-model="enableTimeLimit" type="checkbox" />
+      <div class="mb-4 flex items-center gap-2" @click="enableTimeLimitHR">
+        <input type="checkbox" v-model="enableTimeLimit" />
 
         <label class="font-bold"> Enable Time Limit </label>
       </div>
 
       <!-- TIME LIMIT -->
-      <div class="mb-6">
+      <div class="mb-6" v-show="enableTimeLimit">
         <label class="block mb-2 font-bold"> Time Limit (minutes) </label>
 
         <input
           v-model.number="localTimeLimit"
           type="number"
-          :disabled="!enableTimeLimit"
           class="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-400"
         />
       </div>
