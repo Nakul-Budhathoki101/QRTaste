@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { useSupabase } from "~/lib/supabase";
 
 export type TableStatus = "available" | "occupied" | "reserved" | "cleaning";
 
@@ -13,58 +14,109 @@ export interface RestaurantTable {
 }
 
 export const useTableStore = defineStore("table", () => {
+  const supabase = useSupabase();
+
   const tables = useState<RestaurantTable[]>("tables", () => []);
 
-  const saveTables = () => {
-    localStorage.setItem("restaurant_tables", JSON.stringify(tables.value));
-  };
+  // backend functions..
+  const loadTables = async () => {
+    const { data, error } = await supabase
+      .from("tables")
+      .select("*")
+      .order("id");
 
-  const loadTables = () => {
-    const saved = localStorage.getItem("restaurant_tables");
-
-    if (saved) {
-      tables.value = JSON.parse(saved);
-      return;
+    if (error) {
+      console.error(error);
+      return false;
     }
 
-    tables.value = [
+    tables.value = data ?? [];
+
+    return true;
+  };
+  const addTable = async (newTable: {
+    name: string;
+    seats: number;
+    status: TableStatus;
+  }) => {
+    const { error } = await supabase.from("tables").insert([
       {
-        id: 1,
-        name: "A1",
-        status: "available",
-        customerCount: 0,
-        seats: 1,
+        name: newTable.name,
+        seats: newTable.seats,
+        status: newTable.status,
       },
-      {
-        id: 2,
-        name: "A2",
-        status: "available",
-        customerCount: 0,
-        seats: 1,
-      },
-    ];
+    ]);
 
-    saveTables();
+    if (error) {
+      console.error(error);
+      return {
+        success: false,
+        message: "Failed to add table",
+      };
+    }
+
+    await loadTables();
+
+    return {
+      success: true,
+      message: "Table added successfully",
+    };
+  };
+  
+  const updateTable = async (
+    tableId: number,
+    updatedTable: {
+      name: string;
+      seats: number;
+      status: TableStatus;
+    },
+  ) => {
+    const { error } = await supabase
+      .from("tables")
+      .update({
+        name: updatedTable.name,
+        seats: updatedTable.seats,
+        status: updatedTable.status,
+      })
+      .eq("id", tableId);
+
+    if (error) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: "Failed to update table",
+      };
+    }
+
+    await loadTables();
+
+    return {
+      success: true,
+      message: "Table updated successfully",
+    };
+  };
+  const removeTable = async (tableId: number) => {
+    const { error } = await supabase.from("tables").delete().eq("id", tableId);
+
+    if (error) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: "Failed to delete table",
+      };
+    }
+
+    await loadTables();
+
+    return {
+      success: true,
+      message: "Table deleted successfully",
+    };
   };
 
-  const addTable = (name: string) => {
-    tables.value.push({
-      id: Date.now(),
-      name,
-      status: "available",
-      customerCount: 0,
-      seats: 1,
-    });
-
-    saveTables();
-  };
-
-  const removeTable = (id: number) => {
-    tables.value = tables.value.filter((table) => table.id !== id);
-
-    saveTables();
-  };
-
+  // sessions functions..
   const startSession = (
     tableId: number,
     payload: {
@@ -80,10 +132,7 @@ export const useTableStore = defineStore("table", () => {
     table.customerCount = payload.customerCount;
     table.timeLimit = payload.timeLimit;
     table.startTime = new Date().toISOString();
-
-    saveTables();
   };
-
   const updateSession = (
     tableId: number,
     payload: {
@@ -97,10 +146,7 @@ export const useTableStore = defineStore("table", () => {
 
     table.customerCount = payload.customerCount;
     table.timeLimit = payload.timeLimit;
-
-    saveTables();
   };
-
   const setCleaning = (tableId: number) => {
     const table = tables.value.find((t) => t.id === tableId);
 
@@ -108,10 +154,7 @@ export const useTableStore = defineStore("table", () => {
 
     table.status = "cleaning";
     table.startTime = undefined;
-
-    saveTables();
   };
-
   const resetTable = (tableId: number) => {
     const table = tables.value.find((t) => t.id === tableId);
 
@@ -121,17 +164,15 @@ export const useTableStore = defineStore("table", () => {
     table.customerCount = undefined;
     table.timeLimit = undefined;
     table.startTime = undefined;
-
-    saveTables();
   };
 
   return {
     tables,
 
     loadTables,
-    saveTables,
 
     addTable,
+    updateTable,
     removeTable,
 
     startSession,

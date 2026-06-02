@@ -1,13 +1,5 @@
 <script setup lang="ts">
-interface Props {
-  show: boolean;
-  message: string;
-  type?: "success" | "error" | "info";
-}
-
-withDefaults(defineProps<Props>(), {
-  type: "success",
-});
+const toastStore = useToastStore();
 
 const emit = defineEmits<{
   close: [];
@@ -24,25 +16,20 @@ const emit = defineEmits<{
     leave-to-class="opacity-0 translate-y-4"
   >
     <div
-      v-if="show"
+      v-if="toastStore.show"
       class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] px-6 py-4 rounded-xl shadow-2xl text-white min-w-[300px]"
       :class="{
-        'bg-green-500': type === 'success',
-        'bg-red-500': type === 'error',
-        'bg-blue-500': type === 'info',
+        'bg-green-500': toastStore.type === 'success',
+        'bg-red-500': toastStore.type === 'error',
+        'bg-blue-500': toastStore.type === 'info',
       }"
     >
       <div class="flex justify-between items-center gap-4">
         <span>
-          {{ message }}
+          {{ toastStore.message }}
         </span>
 
-        <button
-          class="font-bold"
-          @click="emit('close')"
-        >
-          ✕
-        </button>
+        <button class="font-bold" @click="emit('close')">✕</button>
       </div>
     </div>
   </Transition>

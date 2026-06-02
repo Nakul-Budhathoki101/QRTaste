@@ -1,34 +1,28 @@
 <script setup lang="ts">
+
 import { useSupabase } from "~/lib/supabase";
 import type { MenuItem } from "~/types/menu";
 import { MENU_CATEGORIES } from "~/constants/menuCategories";
 
+definePageMeta({
+  middleware: ["auth"],
+});
+
 type MainCategory = keyof typeof MENU_CATEGORIES;
 
-const menuItems = ref<MenuItem[]>([]);
+const menuStore = useMenuStore();
 
-const supabase = useSupabase();
+const toastStore = useToastStore();
+
+const confirmStore = useConfirmStore();
+
+const menuItems = computed(() => menuStore.menuItems);
 
 const loading = ref(false);
 
-const loadMenu = async () => {
-  loading.value = true;
-
-  const { data, error } = await supabase
-    .from("menu_items")
-    .select("*")
-    .order("id");
-
-  if (error) {
-    console.error(error);
-  } else {
-    menuItems.value = data || [];
-  }
-
-  loading.value = false;
-};
-
-onMounted(loadMenu);
+onMounted(async () => {
+  await menuStore.loadMenu();
+});
 
 const showAddModal = ref(false);
 const showEditModal = ref(false);
@@ -56,78 +50,44 @@ const createMenuItem = async () => {
     (item) => item.name.toLowerCase() === newItem.value.name.toLowerCase(),
   );
   if (exists) {
-    alert("Menu item already exists");
-    return;
-  }
-  const { error } = await supabase.from("menu_items").insert([
-    {
-      name: newItem.value.name,
-      description: newItem.value.description,
-      price: newItem.value.price,
-      image_url: newItem.value.image_url,
-      main_category: newItem.value.main_category,
-      sub_category: newItem.value.sub_category,
-    },
-  ]);
+    toastStore.open("Menu item already exists", "error");
 
-  if (error) {
-    console.error(error);
     return;
   }
 
-  await loadMenu();
-
+  const result = await menuStore.createMenuItem(newItem.value);
+  toastStore.open(result.message, result.success ? "success" : "error");
+  if (!result.success) return;
   showAddModal.value = false;
-
   newItem.value = {
     name: "",
     description: "",
     price: 0,
     image_url: "",
-    main_category: "Food" as MainCategory,
+    main_category: "Food",
     sub_category: "Appetizer",
   };
 };
-
 const updateMenuItem = async () => {
   if (!selectedMenuItem.value) return;
-
-  const { error } = await supabase
-    .from("menu_items")
-    .update({
-      name: selectedMenuItem.value.name,
-
-      description: selectedMenuItem.value.description,
-
-      price: selectedMenuItem.value.price,
-
-      image_url: selectedMenuItem.value.image_url,
-      main_category: selectedMenuItem.value.main_category,
-      sub_category: selectedMenuItem.value.sub_category,
-    })
-    .eq("id", selectedMenuItem.value.id);
-
-  if (error) {
-    console.error(error);
-    return;
-  }
-
+  const result = await menuStore.updateMenuItem(selectedMenuItem.value);
+  toastStore.open(result.message, result.success ? "success" : "error");
+  if (!result.success) return;
   showEditModal.value = false;
-
-  await loadMenu();
 };
-
 const deleteMenuItem = async (id: number) => {
-  if (!confirm("Delete this menu item?")) return;
-
-  const { error } = await supabase.from("menu_items").delete().eq("id", id);
-
-  if (error) {
-    console.error(error);
+  const item = menuItems.value.find((x) => x.id === id);
+  if (!item) {
+    toastStore.open("Menu item not found", "error");
     return;
   }
-
-  await loadMenu();
+  const confirmed = await confirmStore.confirm({
+    title: "Delete Menu Item",
+    message: `Delete "${item.name}" ?`,
+  });
+  if (!confirmed) return;
+  const result = await menuStore.removeMenuItem(id);
+  toastStore.open(result.message, result.success ? "success" : "error");
 };
 </script>
 

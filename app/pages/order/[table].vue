@@ -378,10 +378,4 @@ const showSuccessToast = (message: string) => {
     </div>
   </div>
 
-  <AppToast
-  :show="showToast"
-  :message="toastMessage"
-  :type="toastType"
-  @close="showToast = false"
-/>
 </template>

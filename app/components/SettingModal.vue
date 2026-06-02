@@ -54,6 +54,21 @@ const settingsStore = useSettingsStore();
       >
         Menu Management
       </NuxtLink>
+      <div class="flex flex-col gap-3 text-center my-3">
+        <NuxtLink
+          to="/admin/menu"
+          class="bg-green-500 text-white px-4 py-2 rounded-lg"
+        >
+          MENU Management
+        </NuxtLink>
+
+        <NuxtLink
+          to="/admin/table"
+          class="bg-green-500 text-white px-4 py-2 rounded-lg"
+        >
+          TABLE Management
+        </NuxtLink>
+      </div>
 
       <div class="flex justify-end">
         <button

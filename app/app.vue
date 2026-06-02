@@ -1,3 +1,7 @@
 <template>
-  <NuxtPage />
+  <NuxtLayout>
+    <NuxtPage />
+    <AppToast />
+    <Confirm />
+  </NuxtLayout>
 </template>

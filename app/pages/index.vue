@@ -1,4 +1,7 @@
 <script setup lang="ts">
+definePageMeta({
+  middleware: ["auth"],
+});
 import { ref, onMounted, onUnmounted } from "vue";
 
 import { useTableStore } from "#imports";
@@ -35,6 +38,7 @@ const selectedTable = ref<RestaurantTable | null>(null);
 const settingsStore = useSettingsStore();
 const tableStore = useTableStore();
 const orderStore = useOrderStore();
+const authStore = useAuthStore();
 
 const showSettings = ref(false);
 const orders = ref<any[]>([]);
@@ -103,7 +107,7 @@ const formatTime = (seconds: number) => {
 const openTableModal = (table: RestaurantTable) => {
   selectedTable.value = table;
 
-  console.log('muji',table)
+  console.log("muji", table);
 };
 const closeModal = () => {
   selectedTable.value = null;
@@ -238,6 +242,13 @@ const handleAddTable = () => {
         >
           ⚙️ Settings
         </button>
+
+        <button
+          class="bg-red-500 text-white px-4 py-2 rounded-lg"
+          @click="authStore.logout()"
+        >
+          Logout
+        </button>
       </div>
     </div>
 
@@ -280,46 +291,6 @@ const handleAddTable = () => {
         >
           📱 QR Code
         </button>
-      </div>
-    </div>
-
-    <!-- ADD TABLE -->
-
-    <button
-      class="px-4 py-2 bg-red-500 rounded-lg mt-3"
-      @click="showAddTableModal = true"
-    >
-      ADD TABLE
-    </button>
-
-    <div
-      v-if="showAddTableModal"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center"
-    >
-      <div class="bg-white p-6 rounded-xl w-[400px]">
-        <h2 class="text-2xl font-bold mb-4">Add Table</h2>
-
-        <input
-          v-model="newTableName"
-          placeholder="Example: A1"
-          class="w-full border p-3 rounded-lg mb-4"
-        />
-
-        <div class="flex justify-end gap-2">
-          <button
-            class="px-4 py-2 bg-gray-300 rounded-lg"
-            @click="showAddTableModal = false"
-          >
-            Cancel
-          </button>
-
-          <button
-            class="px-4 py-2 bg-green-500 text-white rounded-lg"
-            @click="handleAddTable"
-          >
-            Add
-          </button>
-        </div>
       </div>
     </div>
 
