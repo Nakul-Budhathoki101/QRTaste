@@ -35,6 +35,19 @@ const settingsStore = useSettingsStore();
         />
       </div>
 
+      <!-- TAX RATE -->
+      <div class="mb-6">
+        <label class="block mb-2 font-bold"> Tax Rate (%) </label>
+
+        <input
+          v-model.number="settingsStore.taxRate"
+          type="number"
+          min="0"
+          max="100"
+          class="w-full border rounded-lg p-3"
+        />
+      </div>
+
       <NuxtLink
         to="/admin/menu"
         class="bg-green-500 text-white px-4 py-2 rounded-lg"

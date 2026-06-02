@@ -7,6 +7,7 @@ import { useSettingsStore } from "#imports";
 import TableSessionModal from "~/components/TableSessionModal.vue";
 import TableQrModal from "~/components/TableQrModal.vue";
 import SettingModal from "~/components/SettingModal.vue";
+import CheckoutModal from "~/components/CheckoutModal.vue";
 
 import { useSupabase } from "~/lib/supabase";
 
@@ -39,6 +40,7 @@ const showSettings = ref(false);
 const orders = ref<any[]>([]);
 
 const qrTableName = ref("");
+const checkoutTable = ref<RestaurantTable | null>(null);
 
 const openQr = (tableName: string) => {
   qrTableName.value = tableName;
@@ -185,6 +187,20 @@ const updateOrderStatus = async (orderId: number, status: string) => {
   if (error) {
     console.error(error);
   }
+};
+
+const handleCheckout = () => {
+  if (!selectedTable.value) return;
+
+  checkoutTable.value = { ...selectedTable.value };
+  selectedTable.value = null;
+};
+
+const handlePaid = () => {
+  if (!checkoutTable.value) return;
+
+  tableStore.setCleaning(checkoutTable.value.id);
+  checkoutTable.value = null;
 };
 
 const showAddTableModal = ref(false);
@@ -392,6 +408,14 @@ const handleAddTable = () => {
       @close="closeModal"
       @start="startSession"
       @update="updateSession"
+      @checkout="handleCheckout"
+    />
+
+    <CheckoutModal
+      v-if="checkoutTable"
+      :table="checkoutTable"
+      @close="checkoutTable = null"
+      @paid="handlePaid"
     />
 
     <SettingModal v-if="showSettings" @close="showSettings = false" />

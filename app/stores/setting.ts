@@ -6,7 +6,8 @@ export const useSettingsStore = defineStore(
     state: () => ({
       defaultTimeLimit: 120,
       warningBeforeMinutes: 10,
-      enableSoundAlert: true
+      enableSoundAlert: true,
+      taxRate: 10,
     })
   }
 )

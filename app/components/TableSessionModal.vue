@@ -20,6 +20,7 @@ const emit = defineEmits<{
       timeLimit?: number;
     },
   ];
+  checkout: [];
 }>();
 
 const settings = useSettingsStore();
@@ -105,6 +106,14 @@ const enableTimeLimitHR = () => {
         </button>
 
         <div v-if="isExistingSession" class="flex flex-col gap-3 mt-4">
+          <!-- CHECKOUT -->
+          <button
+            class="bg-amber-500 text-white px-4 py-2 rounded-lg font-bold text-lg"
+            @click="$emit('checkout')"
+          >
+            💰 Checkout
+          </button>
+
           <!-- CLEANING -->
           <button
             class="bg-blue-500 text-white px-4 py-2 rounded-lg"
