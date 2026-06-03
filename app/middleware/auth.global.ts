@@ -5,7 +5,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const publicRoutes = ["/login"];
 
-  if (to.path.startsWith("/table")) {
+  if (to.path.startsWith("/order")) {
     return;
   }
 
