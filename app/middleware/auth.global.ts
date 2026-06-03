@@ -1,15 +1,19 @@
-export default defineNuxtRouteMiddleware((to) => {
-  if (import.meta.server) {
+export default defineNuxtRouteMiddleware(async (to) => {
+  const authStore = useAuthStore();
+
+  await authStore.init();
+
+  const publicRoutes = ["/login"];
+
+  if (to.path.startsWith("/table")) {
     return;
   }
 
-  const authStore = useAuthStore();
-
-  if (to.path === "/login" && authStore.user) {
-    return navigateTo("/");
+  if (publicRoutes.includes(to.path)) {
+    return;
   }
 
-  if (to.path !== "/login" && !authStore.user) {
+  if (!authStore.user) {
     return navigateTo("/login");
   }
 });
