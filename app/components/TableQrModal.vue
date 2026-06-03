@@ -31,14 +31,12 @@ onMounted(() => {
 
       <div class="mt-6 text-center">
         <p class="text-gray-500 break-all">
-          {{ tableUrl }}
+          <!-- {{ tableUrl }} -->
+          <a :href="tableUrl" target="_blank">{{ tableUrl }}</a>
         </p>
       </div>
 
-      <button
-        class="w-full mt-6 bg-black text-white py-3 rounded-xl"
-        @click="$emit('close')"
-      >
+      <button class="w-full mt-6 bg-black text-white py-3 rounded-xl" @click="$emit('close')">
         Close
       </button>
     </div>

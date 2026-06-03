@@ -31,33 +31,41 @@ const emit = defineEmits<{
 
 const supabase = useSupabase();
 const settingsStore = useSettingsStore();
+const billStore = useBillStore();
 
 const loading = ref(true);
 const paying = ref(false);
 const error = ref("");
 const orders = ref<any[]>([]);
 
+const billableOrders = computed(() =>
+  orders.value.filter((o) => o.status === "preparing" || o.status === "completed")
+);
+
+const pendingCount = computed(() =>
+  orders.value.filter((o) => o.status === "pending").length
+);
+
 const aggregatedItems = computed<AggregatedItem[]>(() => {
   const itemMap = new Map<string, AggregatedItem>();
 
-  for (const order of orders.value) {
-    if (!order.items) continue;
+  for (const order of billableOrders.value) {
+    const item = order.items;
+    if (!item) continue;
 
-    for (const item of order.items) {
-      const key = `${item.name}_${item.price}`;
-      const existing = itemMap.get(key);
+    const key = `${item.name}_${item.price}`;
+    const existing = itemMap.get(key);
 
-      if (existing) {
-        existing.quantity += item.quantity;
-        existing.lineTotal = existing.price * existing.quantity;
-      } else {
-        itemMap.set(key, {
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          lineTotal: item.price * item.quantity,
-        });
-      }
+    if (existing) {
+      existing.quantity += item.quantity;
+      existing.lineTotal = existing.price * existing.quantity;
+    } else {
+      itemMap.set(key, {
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        lineTotal: item.price * item.quantity,
+      });
     }
   }
 
@@ -120,20 +128,35 @@ const fetchOrders = async () => {
 const markAsPaid = async () => {
   paying.value = true;
 
-  const { error: insertError } = await supabase.from("table_bills").insert([
-    {
-      table_name: props.table.name,
-      items: aggregatedItems.value,
-      total_price: grandTotal.value,
-      is_paid: true,
-    },
-  ]);
+  const billItems = aggregatedItems.value.map((item) => ({
+    menuItemId: 0,
+    name: item.name,
+    price: item.price,
+    quantity: item.quantity,
+  }));
 
-  if (insertError) {
-    error.value = `Failed to save bill: ${insertError.message}`;
-    console.error(insertError);
+  const result = await billStore.createBill({
+    tableId: props.table.id,
+    tableName: props.table.name,
+    items: billItems,
+    subtotal: subtotal.value,
+    tax: taxAmount.value,
+    total: grandTotal.value,
+    status: "paid",
+    createdAt: new Date().toISOString(),
+    paidAt: new Date().toISOString(),
+  });
+
+  if (!result.success) {
+    error.value = `Failed to save bill: ${result.message}`;
     paying.value = false;
     return;
+  }
+
+  // Discard any remaining pending orders for this table
+  const pendingOrders = orders.value.filter((o) => o.status === "pending");
+  for (const order of pendingOrders) {
+    await supabase.from("orders").delete().eq("id", order.id);
   }
 
   paying.value = false;
@@ -188,16 +211,26 @@ onMounted(fetchOrders);
           {{ error }}
         </div>
 
-        <!-- Empty -->
-        <div
-          v-else-if="aggregatedItems.length === 0"
-          class="text-center py-8 text-gray-400"
-        >
-          No orders found for this session.
-        </div>
-
-        <!-- Items -->
+        <!-- Content -->
         <div v-else>
+          <!-- Pending Notice -->
+          <div
+            v-if="pendingCount > 0"
+            class="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-700 text-sm"
+          >
+            ⚠️ {{ pendingCount }} pending order(s) not included in the bill.
+          </div>
+
+          <!-- Empty -->
+          <div
+            v-if="aggregatedItems.length === 0"
+            class="text-center py-8 text-gray-400"
+          >
+            No billable orders found. All orders may still be pending.
+          </div>
+
+          <!-- Items -->
+          <div v-else>
           <div class="space-y-3">
             <div
               v-for="(item, index) in aggregatedItems"
@@ -234,6 +267,7 @@ onMounted(fetchOrders);
               <span>¥{{ grandTotal }}</span>
             </div>
           </div>
+        </div>
         </div>
       </div>
 

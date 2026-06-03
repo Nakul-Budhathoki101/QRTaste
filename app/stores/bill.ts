@@ -31,7 +31,19 @@ export const useBillStore = defineStore("bill", () => {
   };
 
   const createBill = async (bill: Omit<TableBill, "id">) => {
-    const { error } = await supabase.from("bills").insert([bill]);
+    const { error } = await supabase.from("bills").insert([
+      {
+        table_id: bill.tableId,
+        table_name: bill.tableName,
+        items: bill.items,
+        subtotal: bill.subtotal,
+        tax: bill.tax,
+        total: bill.total,
+        status: bill.status,
+        created_at: bill.createdAt,
+        paid_at: bill.paidAt,
+      },
+    ]);
 
     if (error) {
       console.error(error);

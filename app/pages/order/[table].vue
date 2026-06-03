@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { OrderItem } from "~/types";
 import type { MenuItem } from "~/types/menu";
+import { useSupabase } from "~/lib/supabase";
 
 const route = useRoute();
 const tableStore = useTableStore();
@@ -8,6 +9,7 @@ const orderStore = useOrderStore();
 const menuStore = useMenuStore();
 const toastStore = useToastStore();
 const categoryStore = useCategoryStore();
+const supabase = useSupabase();
 
 const activeCategoryId = ref<number>();
 const activeSubCategory = ref("");
@@ -15,6 +17,11 @@ const activeSubCategoryId = ref<number>();
 const sectionRefs = ref<Record<string, HTMLElement>>({});
 
 const showCart = ref(false);
+const showMyOrders = ref(false);
+
+// Table orders for the customer
+const tableOrders = ref<any[]>([]);
+const loadingOrders = ref(false);
 
 onMounted(async () => {
   await Promise.all([
@@ -27,7 +34,76 @@ onMounted(async () => {
   if (categoryStore.categories.length) {
     activeCategoryId.value = categoryStore.categories[0]?.id;
   }
+
+  // Load orders for this table
+  await fetchTableOrders();
+
+  // Subscribe to realtime order updates for this table
+  supabase
+    .channel(`customer-orders-${tableName}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "orders",
+      },
+      async () => {
+        await fetchTableOrders();
+      },
+    )
+    .subscribe();
 });
+
+const fetchTableOrders = async () => {
+  loadingOrders.value = true;
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("table_name", tableName)
+    .order("created_at", { ascending: false });
+
+  if (!error) {
+    tableOrders.value = data || [];
+  }
+
+  loadingOrders.value = false;
+};
+
+const activeOrders = computed(() =>
+  tableOrders.value.filter((o) => o.status !== "completed"),
+);
+
+const completedOrders = computed(() =>
+  tableOrders.value.filter((o) => o.status === "completed"),
+);
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case "pending":
+      return "bg-amber-100 text-amber-700";
+    case "preparing":
+      return "bg-blue-100 text-blue-700";
+    case "completed":
+      return "bg-green-100 text-green-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case "pending":
+      return "⏳";
+    case "preparing":
+      return "🍳";
+    case "completed":
+      return "✅";
+    default:
+      return "📋";
+  }
+};
 
 //table information
 const tableName = route.params.table;
@@ -144,26 +220,6 @@ const addItemFinal = async () => {
     </div>
   </div>
 
-  <!-- SUB CATEGORY -->
-  <!-- <div class="sticky top-[72px] z-40 bg-white border-b shadow-sm">
-    <div class="flex gap-2 overflow-x-auto px-3 py-2">
-      <button
-        v-for="sub in activeSubCategories"
-        :key="sub.id"
-        :id="String(sub.id)"
-        class="px-4 py-2 rounded-full whitespace-nowrap transition-all"
-        :class="{
-          'bg-black text-white': activeSubCategoryId === sub.id,
-
-          'bg-gray-100 hover:bg-gray-200': activeSubCategoryId !== sub.id,
-        }"
-        @click="scrollToSection(String(sub.id))"
-      >
-        {{ sub.name }}
-      </button>
-    </div>
-  </div> -->
-
   <!-- MENU -->
   <div
     v-for="sub in activeSubCategories"
@@ -222,6 +278,122 @@ const addItemFinal = async () => {
     </div>
   </div>
 
+  <!-- FLOATING MY ORDERS BUTTON -->
+  <button
+    v-if="tableOrders.length > 0"
+    class="fixed bottom-6 right-6 z-40 bg-black text-white px-5 py-3 rounded-full shadow-xl flex items-center gap-2 hover:bg-gray-800 transition-all active:scale-95"
+    @click="showMyOrders = true"
+  >
+    📋 My Orders
+
+    <span
+      v-if="activeOrders.length > 0"
+      class="bg-red-500 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center"
+    >
+      {{ activeOrders.length }}
+    </span>
+  </button>
+
+  <!-- MY ORDERS PANEL -->
+  <div
+    v-if="showMyOrders"
+    class="fixed inset-0 bg-black/50 z-50 flex items-end justify-center"
+    @click.self="showMyOrders = false"
+  >
+    <div
+      class="bg-white w-full max-w-lg rounded-t-3xl shadow-2xl max-h-[80vh] flex flex-col overflow-hidden animate-slide-up"
+    >
+      <!-- Panel Header -->
+      <div class="bg-gray-900 text-white p-5 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-bold">📋 My Orders</h2>
+          <p class="text-gray-400 text-sm mt-1">{{ tableOrders.length }} total orders</p>
+        </div>
+
+        <button
+          class="text-gray-400 hover:text-white text-2xl"
+          @click="showMyOrders = false"
+        >
+          ✕
+        </button>
+      </div>
+
+      <!-- Panel Body -->
+      <div class="flex-1 overflow-y-auto p-4">
+        <!-- Active Orders -->
+        <div v-if="activeOrders.length > 0" class="mb-6">
+          <h3 class="text-sm font-bold text-gray-500 uppercase mb-3">Active</h3>
+
+          <div class="space-y-3">
+            <div
+              v-for="order in activeOrders"
+              :key="order.id"
+              class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm"
+            >
+              <div class="flex justify-between items-start">
+                <div class="flex-1">
+                  <p class="font-bold text-lg">{{ order.items?.name }}</p>
+                  <p class="text-gray-500 text-sm">
+                    x{{ order.items?.quantity }} · ¥{{ order.total_price }}
+                  </p>
+                </div>
+
+                <span
+                  class="px-3 py-1 rounded-full text-xs font-bold"
+                  :class="getStatusColor(order.status)"
+                >
+                  {{ getStatusIcon(order.status) }} {{ order.status }}
+                </span>
+              </div>
+
+              <p class="text-gray-400 text-xs mt-2">
+                {{ new Date(order.created_at).toLocaleTimeString() }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Completed Orders -->
+        <div v-if="completedOrders.length > 0">
+          <h3 class="text-sm font-bold text-gray-500 uppercase mb-3">Completed</h3>
+
+          <div class="space-y-3">
+            <div
+              v-for="order in completedOrders"
+              :key="order.id"
+              class="bg-gray-50 border border-gray-100 rounded-xl p-4"
+            >
+              <div class="flex justify-between items-start">
+                <div class="flex-1">
+                  <p class="font-medium text-gray-600">{{ order.items?.name }}</p>
+                  <p class="text-gray-400 text-sm">
+                    x{{ order.items?.quantity }} · ¥{{ order.total_price }}
+                  </p>
+                </div>
+
+                <span
+                  class="px-3 py-1 rounded-full text-xs font-bold"
+                  :class="getStatusColor(order.status)"
+                >
+                  {{ getStatusIcon(order.status) }} {{ order.status }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty -->
+        <div
+          v-if="tableOrders.length === 0"
+          class="text-center py-12 text-gray-400"
+        >
+          <p class="text-4xl mb-3">🍽️</p>
+          <p>No orders yet. Browse the menu above!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- QUANTITY CONFIRMATION -->
   <div
     v-if="showItemQuantity"
@@ -272,3 +444,18 @@ const addItemFinal = async () => {
     </div>
   </div>
 </template>
+
+<style>
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+  }
+</style>
