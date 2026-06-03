@@ -4,9 +4,6 @@ import { useSupabase } from "~/lib/supabase";
 import type { MenuItem } from "~/types/menu";
 import { MENU_CATEGORIES } from "~/constants/menuCategories";
 
-definePageMeta({
-  middleware: ["auth"],
-});
 
 type MainCategory = keyof typeof MENU_CATEGORIES;
 

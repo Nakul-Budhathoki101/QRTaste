@@ -2,10 +2,6 @@
 import { useSupabase } from "~/lib/supabase";
 import type { RestaurantTable, TableStatus } from "#imports";
 
-definePageMeta({
-  middleware: ["auth"],
-});
-
 const supabase = useSupabase();
 const tableStore = useTableStore();
 const toastStore = useToastStore();

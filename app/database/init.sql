@@ -26,3 +26,16 @@ create table if not exists menu_items (
     is_active boolean default true,
     created_at timestamptz default now()
 );
+
+create table bills (
+    id bigint generated always as identity primary key,
+    table_id bigint not null,
+    table_name text not null,
+    items jsonb not null,
+    subtotal numeric(10,2) not null default 0,
+    tax numeric(10,2) not null default 0,
+    total numeric(10,2) not null default 0,
+    status text not null default 'unpaid',
+    created_at timestamptz not null default now(),
+    paid_at timestamptz
+);

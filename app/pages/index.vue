@@ -1,40 +1,25 @@
 <script setup lang="ts">
-definePageMeta({
-  middleware: ["auth"],
-});
 import { ref, onMounted, onUnmounted } from "vue";
 
 import { useTableStore } from "#imports";
 import { useSettingsStore } from "#imports";
+import { useSupabase } from "~/lib/supabase";
+import { useOrderStore } from "~/stores/order";
 
 import TableSessionModal from "~/components/TableSessionModal.vue";
 import TableQrModal from "~/components/TableQrModal.vue";
 import SettingModal from "~/components/SettingModal.vue";
 import CheckoutModal from "~/components/CheckoutModal.vue";
 
-import { useSupabase } from "~/lib/supabase";
-
-const supabase = useSupabase();
-
-import { useOrderStore } from "~/stores/order";
-
-type TableStatus = "available" | "occupied" | "reserved" | "cleaning";
-
-interface RestaurantTable {
-  id: number;
-  name: string;
-  seats: number;
-  status: TableStatus;
-  customerCount?: number;
-  startTime?: string;
-  timeLimit?: number;
-}
+import type { RestaurantTable, TableStatus } from "#imports";
 
 let interval: ReturnType<typeof setInterval>;
 
 const currentTime = ref(Date.now());
 const selectedTable = ref<RestaurantTable | null>(null);
 
+const supabase = useSupabase();
+const billStore = useBillStore();
 const settingsStore = useSettingsStore();
 const tableStore = useTableStore();
 const orderStore = useOrderStore();
@@ -63,7 +48,8 @@ const fetchOrders = async () => {
 };
 
 onMounted(async () => {
-  tableStore.loadTables();
+  await tableStore.loadTables();
+  await billStore.loadBills();
   await fetchOrders();
   interval = setInterval(() => {
     currentTime.value = Date.now();
@@ -200,179 +186,170 @@ const handleCheckout = () => {
   selectedTable.value = null;
 };
 
+const currentTables = computed(() => tableStore.tables);
+
 const handlePaid = () => {
   if (!checkoutTable.value) return;
 
   tableStore.setCleaning(checkoutTable.value.id);
   checkoutTable.value = null;
 };
-
-const showAddTableModal = ref(false);
-const newTableName = ref("");
-
-const handleAddTable = () => {
-  if (!newTableName.value.trim()) return;
-
-  const exists = tableStore.tables.some(
-    (table) =>
-      String(table.name).toLowerCase() === newTableName.value.toLowerCase(),
-  );
-
-  if (exists) {
-    alert("Table already exists");
-    return;
-  }
-
-  tableStore.addTable(newTableName.value.trim());
-
-  newTableName.value = "";
-  showAddTableModal.value = false;
-};
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-100 p-8">
-    <div class="flex justify-between">
-      <h1 class="text-4xl font-bold mb-8">Restaurant Dashboard</h1>
-
-      <div class="flex justify-end mb-6">
-        <button
-          class="bg-black text-white px-4 py-2 rounded-lg"
-          @click="showSettings = true"
-        >
-          ⚙️ Settings
-        </button>
-
-        <button
-          class="bg-red-500 text-white px-4 py-2 rounded-lg"
-          @click="authStore.logout()"
-        >
-          Logout
-        </button>
-      </div>
-    </div>
-
-    <!-- TABLE GRID -->
-    <div class="grid grid-cols-4 gap-4">
+  <div class="min-h-screen bg-gray-100">
+    <div class="max-w-7xl mx-auto p-6">
+      <!-- HEADER -->
       <div
-        v-for="table in tableStore.tables"
-        :key="table.id"
-        class="rounded-xl shadow-lg p-6 text-white cursor-pointer transition hover:scale-105"
-        :class="getTableColor(table)"
-        @click="openTableModal(table)"
+        class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8"
       >
-        <h2 class="text-2xl font-bold">{{ table.name }}</h2>
+        <h1 class="text-4xl font-bold">Restaurant Dashboard</h1>
 
-        <!-- <p class="mt-2">Seats: {{ table.seats }}</p> -->
+        <div class="flex gap-3">
+          <button
+            class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition"
+            @click="showSettings = true"
+          >
+            ⚙️ Settings
+          </button>
 
-        <p class="mt-4 font-bold capitalize">
-          {{ table.status }}
-        </p>
-
-        <div class="mt-2 h-6">
-          <span v-if="table.customerCount">
-            👥 {{ table.customerCount }} customers
-          </span>
+          <button
+            class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition"
+            @click="authStore.logout()"
+          >
+            Logout
+          </button>
         </div>
-
-        <div class="mt-2 h-6 font-bold">
-          <span v-if="table.startTime">
-            ⏳
-            {{ formatTime(getElapsedSeconds(table)) }}
-          </span>
-
-          <span v-else> ∞ Unlimited </span>
-        </div>
-
-        <button
-          class="mt-4 bg-white text-black px-3 py-2 rounded-lg text-sm"
-          @click.stop="openQr(table.name)"
-          v-if="table.status === 'occupied'"
-        >
-          📱 QR Code
-        </button>
       </div>
-    </div>
 
-    <!-- KITCHEN PANEL -->
-    <div class="mt-10">
-      <h2 class="text-4xl font-bold mb-6">🍳 Kitchen Orders</h2>
-
-      <div class="grid grid-cols-3 gap-4">
+      <!-- TABLE GRID -->
+      <div
+        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+      >
         <div
-          v-for="order in orders"
-          :key="order.id"
-          class="bg-white rounded-3xl p-6 shadow-xl"
+          v-for="table in currentTables"
+          :key="table.id"
+          class="rounded-xl shadow-lg p-6 text-white cursor-pointer transition hover:scale-105 min-h-[220px] flex flex-col justify-between"
+          :class="getTableColor(table)"
+          @click="openTableModal(table)"
         >
-          <!-- HEADER -->
-          <div class="flex justify-between items-center mb-4">
-            <div>
-              <h3 class="text-2xl font-bold">
-                Table
-                {{ order.tableName }}
-              </h3>
+          <div>
+            <h2 class="text-2xl font-bold">
+              {{ table.name }}
+            </h2>
 
-              <p class="text-gray-500">
-                {{ new Date(order.createdAt).toLocaleTimeString() }}
-              </p>
+            <p class="mt-4 font-bold capitalize">
+              {{ table.status }}
+            </p>
+
+            <div class="mt-3 h-6">
+              <span v-if="table.customerCount">
+                👥 {{ table.customerCount }} customers
+              </span>
             </div>
 
-            <!-- STATUS -->
+            <div class="mt-2 h-6 font-bold">
+              <span v-if="table.startTime">
+                ⏳
+                {{ formatTime(getElapsedSeconds(table)) }}
+              </span>
+
+              <span v-else> ∞ Unlimited </span>
+            </div>
+          </div>
+
+          <button
+            v-if="table.status === 'occupied'"
+            class="mt-4 bg-white text-black px-3 py-2 rounded-lg text-sm hover:bg-gray-100 transition"
+            @click.stop="openQr(table.name)"
+          >
+            📱 QR Code
+          </button>
+        </div>
+      </div>
+
+      <!-- KITCHEN ORDERS -->
+      <div class="mt-12">
+        <h2 class="text-4xl font-bold mb-6">🍳 Kitchen Orders</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div
+            v-for="order in orders"
+            :key="order.id"
+            class="bg-white rounded-3xl p-6 shadow-xl min-h-[320px] flex flex-col"
+          >
+            <!-- HEADER -->
+            <div class="flex justify-between items-start mb-4">
+              <div>
+                <h3 class="text-2xl font-bold">
+                  Table
+                  {{ order.tableName }}
+                </h3>
+
+                <p class="text-gray-500">
+                  {{ new Date(order.createdAt).toLocaleTimeString() }}
+                </p>
+              </div>
+
+              <div
+                class="px-4 py-2 rounded-full text-white font-bold"
+                :class="{
+                  'bg-red-500 animate-pulse': order.status === 'pending',
+
+                  'bg-yellow-400 text-black': order.status === 'preparing',
+                }"
+              >
+                {{ order.status }}
+              </div>
+            </div>
+
+            <!-- ITEMS -->
+            <div class="flex-1">
+              <div
+                v-for="item in order.items"
+                :key="item.id"
+                class="flex justify-between py-1"
+              >
+                <span>
+                  {{ item.name }}
+                </span>
+
+                <span> x{{ item.quantity }} </span>
+              </div>
+            </div>
+
+            <!-- TOTAL -->
             <div
-              class="px-4 py-2 rounded-full text-white font-bold"
-              :class="{
-                'bg-red-500 animate-pulse': order.status === 'pending',
-
-                'bg-yellow-400 text-black': order.status === 'preparing',
-              }"
+              class="mt-4 pt-4 border-t flex justify-between text-xl font-bold"
             >
-              {{ order.status }}
+              <span>Total</span>
+
+              <span> ¥{{ order.totalPrice }} </span>
             </div>
-          </div>
 
-          <!-- ITEMS -->
-          <div
-            v-for="item in order.items"
-            :key="item.id"
-            class="flex justify-between mb-2"
-          >
-            <span>
-              {{ item.name }}
-            </span>
+            <!-- ACTIONS -->
+            <div class="flex gap-2 mt-6">
+              <button
+                class="flex-1 bg-blue-500 text-white py-2 rounded-xl hover:bg-blue-600 transition"
+                @click="updateOrderStatus(order.id, 'preparing')"
+              >
+                Preparing
+              </button>
 
-            <span> x{{ item.quantity }} </span>
-          </div>
-
-          <!-- TOTAL -->
-          <div
-            class="mt-4 pt-4 border-t flex justify-between text-xl font-bold"
-          >
-            <span>Total</span>
-
-            <span> ¥{{ order.totalPrice }} </span>
-          </div>
-
-          <!-- ACTIONS -->
-          <div class="flex gap-2 mt-6">
-            <button
-              class="flex-1 bg-blue-500 text-white py-2 rounded-xl"
-              @click="updateOrderStatus(order.id, 'preparing')"
-            >
-              Preparing
-            </button>
-
-            <button
-              class="flex-1 bg-green-500 text-white py-2 rounded-xl"
-              @click="updateOrderStatus(order.id, 'completed')"
-            >
-              Completed
-            </button>
+              <button
+                class="flex-1 bg-green-500 text-white py-2 rounded-xl hover:bg-green-600 transition"
+                @click="updateOrderStatus(order.id, 'completed')"
+              >
+                Completed
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- MODAL COMPONENT -->
+    <!-- MODALS -->
+
     <TableSessionModal
       v-if="selectedTable"
       :table="selectedTable"
