@@ -1,17 +1,10 @@
 <script setup lang="ts">
-
-import { useSupabase } from "~/lib/supabase";
 import type { MenuItem } from "~/types/menu";
-import { MENU_CATEGORIES } from "~/constants/menuCategories";
-
-
-type MainCategory = keyof typeof MENU_CATEGORIES;
 
 const menuStore = useMenuStore();
-
 const toastStore = useToastStore();
-
 const confirmStore = useConfirmStore();
+const categoryStore = useCategoryStore();
 
 const menuItems = computed(() => menuStore.menuItems);
 
@@ -19,6 +12,11 @@ const loading = ref(false);
 
 onMounted(async () => {
   await menuStore.loadMenu();
+  console.log("MENU LOADED", menuStore.menuItems);
+  await categoryStore.loadCategories();
+  console.log("CATEGORIES LOADED", categoryStore.categories);
+  await categoryStore.loadSubCategories();
+  console.log("SUB CATEGORIES LOADED", categoryStore.subCategories);
 });
 
 const showAddModal = ref(false);
@@ -38,9 +36,34 @@ const newItem = ref({
   description: "",
   price: 0,
   image_url: "",
-  main_category: "Food" as MainCategory,
-  sub_category: "Appetizer",
+  category_id: undefined as number | undefined,
+  sub_category_id: undefined as number | undefined,
 });
+
+const addSubCategories = computed(() => {
+  if (!newItem.value.category_id) return [];
+
+  return categoryStore.subCategories.filter(
+    (sub) => sub.category_id === newItem.value.category_id,
+  );
+});
+const editSubCategories = computed(() => {
+  if (!selectedMenuItem.value?.sub_category_id) return [];
+
+  return categoryStore.subCategories.filter(
+    (sub) => sub.category_id === Number(selectedMenuItem.value?.category_id),
+  );
+});
+
+//category Names
+const getCategoryName = (categoryId: number) => {
+  return categoryStore.categories.find((c) => c.id === categoryId)?.name || "-";
+};
+const getSubCategoryName = (subCategoryId: number) => {
+  return (
+    categoryStore.subCategories.find((s) => s.id === subCategoryId)?.name || "-"
+  );
+};
 
 const createMenuItem = async () => {
   const exists = menuItems.value.some(
@@ -48,21 +71,41 @@ const createMenuItem = async () => {
   );
   if (exists) {
     toastStore.open("Menu item already exists", "error");
-
+    return;
+  }
+  if (!newItem.value.category_id) {
+    toastStore.open("Please select a category", "error");
     return;
   }
 
-  const result = await menuStore.createMenuItem(newItem.value);
+  if (!newItem.value.sub_category_id) {
+    toastStore.open("Please select a sub category", "error");
+    return;
+  }
+
+  const result = await menuStore.createMenuItem({
+    name: newItem.value.name,
+    description: newItem.value.description,
+    price: newItem.value.price,
+    image_url: newItem.value.image_url,
+
+    category_id: newItem.value.category_id,
+
+    sub_category_id: newItem.value.sub_category_id,
+  });
+
   toastStore.open(result.message, result.success ? "success" : "error");
+
   if (!result.success) return;
+
   showAddModal.value = false;
   newItem.value = {
     name: "",
     description: "",
     price: 0,
     image_url: "",
-    main_category: "Food",
-    sub_category: "Appetizer",
+    category_id: undefined,
+    sub_category_id: undefined,
   };
 };
 const updateMenuItem = async () => {
@@ -112,20 +155,52 @@ const deleteMenuItem = async (id: number) => {
       :key="item.id"
       class="bg-white shadow rounded-xl p-4 mb-4"
     >
-      <div class="flex justify-between">
-        <div>
-          <h2 class="font-bold text-xl">
-            {{ item.name }}
-          </h2>
+      <div class="flex">
+        <div class="flex gap-5">
+          <div
+            class="w-24 h-24 rounded-xl overflow-hidden bg-gray-100 flex items-center justify-center"
+          >
+            <img
+              v-if="item.image_url"
+              :src="item.image_url"
+              :alt="item.name"
+              class="w-full h-full object-cover"
+            />
+            <div
+              v-else
+              class="flex flex-col items-center justify-center text-gray-400"
+            >
+              <span class="text-3xl"> 📷 </span>
+              <span class="text-xs"> No Image </span>
+            </div>
+          </div>
 
-          <p>
-            {{ item.description }}
-          </p>
+          <div>
+            <h2 class="font-bold text-3xl">
+              {{ item.name }}
+            </h2>
 
-          <p>¥{{ item.price }}</p>
+            <p v-if="item.description" class="text-gray-500 mt-1">
+              {{ item.description }}
+            </p>
+          </div>
         </div>
 
-        <div class="flex gap-2">
+        <div
+          class="h-auto flex flex-row flex-1 items-center justify-center gap-5 text-3xl"
+        >
+          <p class="text-gray-400">
+            {{ getCategoryName(item.category_id) }}
+            /
+            {{ getSubCategoryName(item.sub_category_id) }}
+          </p>
+
+          <P class="text-5xl"> | </P>
+
+          <p class="font-bold text-green-600">{{ item.price }} ¥</p>
+        </div>
+
+        <div class="flex flex-1 justify-end gap-2">
           <button
             class="w-20 bg-blue-500 text-white px-3 py-2 rounded-xl hover:bg-blue-400"
             @click="openEditModal(item)"
@@ -175,15 +250,15 @@ const deleteMenuItem = async (id: number) => {
           </label>
 
           <select
-            v-model="selectedMenuItem.main_category"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+            v-model="selectedMenuItem.category_id"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2"
           >
             <option
-              v-for="(subCategories, category) in MENU_CATEGORIES"
-              :key="category"
-              :value="category"
+              v-for="category in categoryStore.categories"
+              :key="category.id"
+              :value="category.id"
             >
-              {{ category }}
+              {{ category.name }}
             </option>
           </select>
         </div>
@@ -194,15 +269,15 @@ const deleteMenuItem = async (id: number) => {
           </label>
 
           <select
-            v-model="selectedMenuItem.sub_category"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+            v-model="selectedMenuItem.sub_category_id"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2"
           >
             <option
-              v-for="sub in MENU_CATEGORIES[newItem.main_category]"
-              :key="sub"
-              :value="sub"
+              v-for="sub in editSubCategories"
+              :key="sub.id"
+              :value="sub.id"
             >
-              {{ sub }}
+              {{ sub.name }}
             </option>
           </select>
         </div>
@@ -263,15 +338,17 @@ const deleteMenuItem = async (id: number) => {
           </label>
 
           <select
-            v-model="newItem.main_category"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+            v-model="newItem.category_id"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2"
           >
+            <option disabled :value="undefined">Select Category</option>
+
             <option
-              v-for="(subCategories, category) in MENU_CATEGORIES"
-              :key="category"
-              :value="category"
+              v-for="category in categoryStore.categories"
+              :key="category.id"
+              :value="category.id"
             >
-              {{ category }}
+              {{ category.name }}
             </option>
           </select>
         </div>
@@ -282,15 +359,17 @@ const deleteMenuItem = async (id: number) => {
           </label>
 
           <select
-            v-model="newItem.sub_category"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+            v-model="newItem.sub_category_id"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2"
           >
+            <option disabled :value="undefined">Select Sub Category</option>
+
             <option
-              v-for="sub in MENU_CATEGORIES[newItem.main_category]"
-              :key="sub"
-              :value="sub"
+              v-for="sub in addSubCategories"
+              :key="sub.id"
+              :value="sub.id"
             >
-              {{ sub }}
+              {{ sub.name }}
             </option>
           </select>
         </div>

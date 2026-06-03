@@ -1,15 +1,15 @@
 export interface MenuItem {
   id: number;
   name: string;
+
   description: string | null;
   price: number;
+
   image_url: string | null;
 
-  main_category: string;
-  sub_category: string;
+  category_id: number;
+  sub_category_id: number;
 
   is_active: boolean;
   created_at: string;
 }
-
-export type MainCategory = "Food" | "Drinks" | "Alcohol";

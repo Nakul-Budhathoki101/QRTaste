@@ -12,6 +12,8 @@ import SettingModal from "~/components/SettingModal.vue";
 import CheckoutModal from "~/components/CheckoutModal.vue";
 
 import type { RestaurantTable, TableStatus } from "#imports";
+import Category from "./admin/category.vue";
+import type { OrderStatus } from "~/types/order.js";
 
 let interval: ReturnType<typeof setInterval>;
 
@@ -24,9 +26,10 @@ const settingsStore = useSettingsStore();
 const tableStore = useTableStore();
 const orderStore = useOrderStore();
 const authStore = useAuthStore();
+const categoryStore = useCategoryStore();
+const toastStore = useToastStore();
 
 const showSettings = ref(false);
-const orders = ref<any[]>([]);
 
 const qrTableName = ref("");
 const checkoutTable = ref<RestaurantTable | null>(null);
@@ -35,43 +38,12 @@ const openQr = (tableName: string) => {
   qrTableName.value = tableName;
 };
 
-const fetchOrders = async () => {
-  const { data } = await supabase
-    .from("orders")
-    .select("*")
-    .in("status", ["pending", "preparing"])
-    .order("created_at", {
-      ascending: false,
-    });
-
-  orders.value = data || [];
-};
-
 onMounted(async () => {
   await tableStore.loadTables();
   await billStore.loadBills();
-  await fetchOrders();
-  interval = setInterval(() => {
-    currentTime.value = Date.now();
-  }, 1000);
-  supabase
-    .channel("orders-channel")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "orders",
-      },
-      async () => {
-        await fetchOrders();
-      },
-    )
-    .subscribe();
-});
-
-onUnmounted(() => {
-  clearInterval(interval);
+  await categoryStore.loadCategories();
+  await orderStore.loadOrders();
+  orderStore.subscribeOrders();
 });
 
 const getElapsedSeconds = (table: RestaurantTable) => {
@@ -92,8 +64,6 @@ const formatTime = (seconds: number) => {
 
 const openTableModal = (table: RestaurantTable) => {
   selectedTable.value = table;
-
-  console.log("muji", table);
 };
 const closeModal = () => {
   selectedTable.value = null;
@@ -123,6 +93,19 @@ const updateSession = (payload: {
   selectedTable.value.timeLimit = payload.timeLimit;
 
   closeModal();
+};
+
+// ORDER RELATED
+
+const orders = computed(() =>
+  orderStore.orders.filter(
+    (x) => x.status == "pending" || x.status === "preparing",
+  ),
+);
+
+const updateOrderStatus = async (orderId: number, conditon: OrderStatus) => {
+  const result = await orderStore.updateStatus(orderId, conditon);
+  toastStore.open(result.message, result.success ? "success" : "error");
 };
 
 const getTableColor = (table: RestaurantTable) => {
@@ -163,19 +146,6 @@ const getTableColor = (table: RestaurantTable) => {
 
     default:
       return "bg-gray-500";
-  }
-};
-
-const updateOrderStatus = async (orderId: number, status: string) => {
-  const { error } = await supabase
-    .from("orders")
-    .update({
-      status,
-    })
-    .eq("id", orderId);
-
-  if (error) {
-    console.error(error);
   }
 };
 
@@ -283,11 +253,11 @@ const handlePaid = () => {
               <div>
                 <h3 class="text-2xl font-bold">
                   Table
-                  {{ order.tableName }}
+                  {{ order.table_name }}
                 </h3>
 
                 <p class="text-gray-500">
-                  {{ new Date(order.createdAt).toLocaleTimeString() }}
+                  {{ new Date(order.created_at).toLocaleTimeString() }}
                 </p>
               </div>
 
@@ -305,9 +275,19 @@ const handlePaid = () => {
 
             <!-- ITEMS -->
             <div class="flex-1">
+              <div class="flex justify-between py-1 text-xl">
+                <span>
+                  {{ order.items.name }}
+                </span>
+
+                <span> x{{ order.items.quantity }} </span>
+              </div>
+            </div>
+
+            <!-- <div class="flex-1">
               <div
                 v-for="item in order.items"
-                :key="item.id"
+                :key="item.name"
                 class="flex justify-between py-1"
               >
                 <span>
@@ -316,7 +296,7 @@ const handlePaid = () => {
 
                 <span> x{{ item.quantity }} </span>
               </div>
-            </div>
+            </div> -->
 
             <!-- TOTAL -->
             <div
@@ -324,7 +304,7 @@ const handlePaid = () => {
             >
               <span>Total</span>
 
-              <span> ¥{{ order.totalPrice }} </span>
+              <span> ¥{{ order.total_price }} </span>
             </div>
 
             <!-- ACTIONS -->

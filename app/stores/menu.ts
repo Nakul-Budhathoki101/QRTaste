@@ -5,7 +5,7 @@ import type { MenuItem } from "~/types/menu";
 export const useMenuStore = defineStore("menu", () => {
   const supabase = useSupabase();
 
-  const menuItems = useState<MenuItem[]>("menuItems", () => []);
+  const menuItems = ref<MenuItem[]>([]);
 
   const loadMenu = async () => {
     const { data, error } = await supabase
@@ -60,8 +60,10 @@ export const useMenuStore = defineStore("menu", () => {
         description: item.description,
         price: item.price,
         image_url: item.image_url,
-        main_category: item.main_category,
-        sub_category: item.sub_category,
+
+        category_id: item.category_id,
+
+        sub_category_id: item.sub_category_id,
       })
       .eq("id", item.id);
 
@@ -102,6 +104,9 @@ export const useMenuStore = defineStore("menu", () => {
     };
   };
 
+  const getMenuItemById = (id: number) => {
+    return menuItems.value.find((item) => item.id === id) || null;
+  };
   return {
     menuItems,
 
@@ -110,5 +115,7 @@ export const useMenuStore = defineStore("menu", () => {
     createMenuItem,
     updateMenuItem,
     removeMenuItem,
+
+    getMenuItemById,
   };
 });

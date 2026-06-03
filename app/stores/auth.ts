@@ -11,8 +11,6 @@ export const useAuthStore = defineStore("auth", () => {
       data: { session },
     } = await supabase.auth.getSession();
 
-    console.log('muji auth.ts',session);
-
     user.value = session?.user ?? null;
 
     supabase.auth.onAuthStateChange((_event, session) => {

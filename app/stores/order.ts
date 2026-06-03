@@ -119,6 +119,23 @@ export const useOrderStore = defineStore("order", () => {
     orders.value.filter((order) => order.status === "completed"),
   );
 
+  const subscribeOrders = () => {
+    supabase
+      .channel("orders")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+        },
+        async () => {
+          await loadOrders();
+        },
+      )
+      .subscribe();
+  };
+
   return {
     orders,
 
@@ -131,6 +148,7 @@ export const useOrderStore = defineStore("order", () => {
     createOrder,
     updateStatus,
     deleteOrder,
+    subscribeOrders,
 
     getOrderById,
     getOrdersByTableId,

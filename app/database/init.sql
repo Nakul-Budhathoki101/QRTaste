@@ -39,3 +39,23 @@ create table bills (
     created_at timestamptz not null default now(),
     paid_at timestamptz
 );
+
+create table menu_categories (
+    id bigint generated always as identity primary key,
+    name text not null unique,
+    sort_order int default 0,
+    is_active boolean default true,
+    created_at timestamptz default now()
+);
+
+create table menu_sub_categories (
+    id bigint generated always as identity primary key,
+    category_id bigint not null,
+    name text not null,
+    sort_order int default 0,
+    is_active boolean default true,
+    created_at timestamptz default now(),
+    constraint fk_menu_sub_category
+    foreign key (category_id)
+    references menu_categories(id)
+);
