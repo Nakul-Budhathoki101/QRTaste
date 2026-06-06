@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import type { TableBill, BillStatus } from "~/types";
+import type { PaymentMethod, TableBill } from "~/types";
 import { useSupabase } from "~/lib/supabase";
 
 export const useBillStore = defineStore("bill", () => {
@@ -9,7 +9,7 @@ export const useBillStore = defineStore("bill", () => {
 
   const loadBills = async () => {
     const { data, error } = await supabase
-      .from("bills")
+      .from("table_bills")
       .select("*")
       .order("created_at", { ascending: false });
 
@@ -30,8 +30,17 @@ export const useBillStore = defineStore("bill", () => {
     };
   };
 
-  const createBill = async (bill: Omit<TableBill, "id">) => {
-    const { error } = await supabase.from("bills").insert([bill]);
+  const createBill = async (
+    bill: Omit<TableBill, "id" | "created_at" | "is_paid"> & {
+      is_paid?: boolean;
+    },
+  ) => {
+    const { error } = await supabase.from("table_bills").insert([
+      {
+        ...bill,
+        is_paid: bill.is_paid ?? false,
+      },
+    ]);
 
     if (error) {
       console.error(error);
@@ -50,18 +59,14 @@ export const useBillStore = defineStore("bill", () => {
     };
   };
 
-  const updateBillStatus = async (billId: number, status: BillStatus) => {
-    const payload: Partial<TableBill> = {
-      status,
-    };
-
-    if (status === "paid") {
-      payload.paidAt = new Date().toISOString();
-    }
-
+  const markPaid = async (billId: number, paymentMethod: PaymentMethod) => {
     const { error } = await supabase
-      .from("bills")
-      .update(payload)
+      .from("table_bills")
+      .update({
+        is_paid: true,
+        payment_method: paymentMethod,
+        paid_at: new Date().toISOString(),
+      })
       .eq("id", billId);
 
     if (error) {
@@ -82,7 +87,10 @@ export const useBillStore = defineStore("bill", () => {
   };
 
   const deleteBill = async (billId: number) => {
-    const { error } = await supabase.from("bills").delete().eq("id", billId);
+    const { error } = await supabase
+      .from("table_bills")
+      .delete()
+      .eq("id", billId);
 
     if (error) {
       console.error(error);
@@ -101,49 +109,32 @@ export const useBillStore = defineStore("bill", () => {
     };
   };
 
-  const getBillById = (billId: number) => {
-    return bills.value.find((bill) => bill.id === billId) || null;
-  };
+  const getBillById = (billId: number) =>
+    bills.value.find((bill) => bill.id === billId) || null;
 
-  const getBillByTableId = (tableId: number) => {
-    return (
-      bills.value.find(
-        (bill) => bill.tableId === tableId && bill.status === "unpaid",
-      ) || null
-    );
-  };
-
-  const getBillsByTableId = (tableId: number) => {
-    return bills.value.filter((bill) => bill.tableId === tableId);
-  };
+  const getBillsByTable = (tableName: string) =>
+    bills.value.filter((bill) => bill.table_name === tableName);
 
   const unpaidBills = computed(() =>
-    bills.value.filter((bill) => bill.status === "unpaid"),
+    bills.value.filter((bill) => !bill.is_paid),
   );
 
-  const paidBills = computed(() =>
-    bills.value.filter((bill) => bill.status === "paid"),
-  );
+  const paidBills = computed(() => bills.value.filter((bill) => bill.is_paid));
 
   const totalRevenue = computed(() =>
-    paidBills.value.reduce((sum, bill) => sum + bill.total, 0),
+    paidBills.value.reduce((sum, bill) => sum + Number(bill.total_price), 0),
   );
 
   return {
     bills,
-
     unpaidBills,
     paidBills,
     totalRevenue,
-
     loadBills,
-
     createBill,
-    updateBillStatus,
+    markPaid,
     deleteBill,
-
     getBillById,
-    getBillByTableId,
-    getBillsByTableId,
+    getBillsByTable,
   };
 });

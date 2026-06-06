@@ -1,72 +1,125 @@
 <script setup lang="ts">
-import { useSupabase } from "~/lib/supabase";
 import type { RestaurantTable, TableStatus } from "#imports";
 
-const supabase = useSupabase();
 const tableStore = useTableStore();
 const toastStore = useToastStore();
 const confirmStore = useConfirmStore();
 
 const tables = computed(() => tableStore.tables);
-
-const loading = ref(false);
-
+const loading = ref(true);
 const showAddModal = ref(false);
 const showEditModal = ref(false);
+const search = ref("");
+const statusFilter = ref<TableStatus | "all">("all");
+const seatFilter = ref<"all" | "small" | "medium" | "large">("all");
 
-const showConfirm = ref(false);
-
-const DEFAULT_NEW_TABLE = {
+const createDefaultTable = () => ({
   name: "",
   seats: 1,
   status: "available" as TableStatus,
-  customerCount: 0,
-  timeLimit: 0,
-};
-const newTable = ref(DEFAULT_NEW_TABLE);
-
-onMounted(async () => {
-  await tableStore.loadTables();
 });
 
+const newTable = ref(createDefaultTable());
 const selectedTable = ref<RestaurantTable | null>(null);
 
+const filteredTables = computed(() => {
+  const term = search.value.trim().toLowerCase();
+
+  return tables.value.filter((table) => {
+    const matchesSearch =
+      !term ||
+      table.name.toLowerCase().includes(term) ||
+      table.status.toLowerCase().includes(term);
+
+    const matchesStatus =
+      statusFilter.value === "all" || table.status === statusFilter.value;
+
+    const matchesSeats =
+      seatFilter.value === "all" ||
+      (seatFilter.value === "small" && table.seats <= 2) ||
+      (seatFilter.value === "medium" && table.seats >= 3 && table.seats <= 4) ||
+      (seatFilter.value === "large" && table.seats >= 5);
+
+    return matchesSearch && matchesStatus && matchesSeats;
+  });
+});
+
+const tableCounts = computed(() => ({
+  total: tables.value.length,
+  available: tables.value.filter((table) => table.status === "available").length,
+  occupied: tables.value.filter((table) => table.status === "occupied").length,
+  needsCleaning: tables.value.filter((table) => table.status === "cleaning")
+    .length,
+}));
+
+onMounted(async () => {
+  loading.value = true;
+  await tableStore.loadTables();
+  loading.value = false;
+});
+
 const openEditModal = (item: RestaurantTable) => {
-  selectedTable.value = {
-    ...item,
-  };
+  selectedTable.value = { ...item };
   showEditModal.value = true;
 };
 
 const createTable = async () => {
-  const exists = tables.value.some(
-    (table: any) =>
-      table.name.toLowerCase() === newTable.value.name.toLowerCase(),
-  );
+  const name = newTable.value.name.trim();
 
-  if (exists) {
-    alert("Table already exists");
+  if (!name) {
+    toastStore.open("Table name is required", "error");
     return;
   }
 
-  const result = await tableStore.addTable(newTable.value);
+  if (newTable.value.seats < 1) {
+    toastStore.open("Seats must be at least 1", "error");
+    return;
+  }
+
+  const exists = tables.value.some(
+    (table) => table.name.toLowerCase() === name.toLowerCase(),
+  );
+
+  if (exists) {
+    toastStore.open("Table already exists", "error");
+    return;
+  }
+
+  const result = await tableStore.addTable({
+    ...newTable.value,
+    name,
+  });
   toastStore.open(result.message, result.success ? "success" : "error");
 
+  if (!result.success) return;
+
   showAddModal.value = false;
-  newTable.value = DEFAULT_NEW_TABLE;
+  newTable.value = createDefaultTable();
 };
 
 const updateTable = async () => {
   if (!selectedTable.value) return;
 
+  const name = selectedTable.value.name.trim();
+
+  if (!name) {
+    toastStore.open("Table name is required", "error");
+    return;
+  }
+
+  if (selectedTable.value.seats < 1) {
+    toastStore.open("Seats must be at least 1", "error");
+    return;
+  }
+
   const result = await tableStore.updateTable(selectedTable.value.id, {
-    name: selectedTable.value.name,
+    name,
     seats: selectedTable.value.seats,
     status: selectedTable.value.status,
   });
   toastStore.open(result.message, result.success ? "success" : "error");
 
-  showEditModal.value = false;
+  if (result.success) showEditModal.value = false;
 };
 
 const deleteTable = async (id: number) => {
@@ -83,153 +136,210 @@ const deleteTable = async (id: number) => {
   });
 
   if (!confirmed) return;
-  const result = await tableStore.removeTable(id);
 
+  const result = await tableStore.removeTable(id);
   toastStore.open(result.message, result.success ? "success" : "error");
 };
 </script>
 
 <template>
-  <div class="p-2 mt-5 mb-5">
-    <NuxtLink to="/" class="bg-gray-500 text-white px-4 py-2 rounded-lg">
-      ← Dashboard
-    </NuxtLink>
-  </div>
+  <div class="min-h-screen bg-gray-100 p-4">
+    <div class="max-w-5xl mx-auto">
+      <div class="mb-5">
+        <NuxtLink to="/" class="bg-gray-700 text-white px-4 py-2 rounded-lg">
+          Dashboard
+        </NuxtLink>
+      </div>
 
-  <div class="p-2">
-    <div class="flex justify-between items-center">
-      <h1 class="text-3xl font-bold">TABLE Management</h1>
-
-      <h2
-        class="text-2xl font-bold bg-green-500 p-2 rounded text-gray-800 mb-6 hover:bg-green-400"
-        @click="showAddModal = true"
+      <div
+        class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6"
       >
-        🍽 Add Table
-      </h2>
-    </div>
-
-    <div v-if="loading" class="text-center py-12">Loading tables...</div>
-
-    <div
-      v-if="!loading && tables.length === 0"
-      class="text-center py-12 text-gray-400"
-    >
-      No tables found....
-    </div>
-
-    <!-- TABLES -->
-    <div
-      v-for="table in tables"
-      :key="table.id"
-      class="bg-white shadow rounded-xl p-4 mb-4"
-    >
-      <div class="flex justify-between">
         <div>
-          <h2 class="font-bold text-xl">
-            {{ table.name }}
-          </h2>
-
-          <p>Seats: {{ table.seats }}</p>
-
-          <span
-            class="px-3 py-1 rounded-full text-white text-sm"
-            :class="{
-              'bg-green-500': table.status === 'available',
-
-              'bg-yellow-500': table.status === 'occupied',
-
-              'bg-blue-500': table.status === 'reserved',
-
-              'bg-red-500': table.status === 'cleaning',
-            }"
-          >
-            {{ table.status }}
-          </span>
-
-          <p>
-            Time Limit:
-            {{ table.timeLimit || "-" }}
+          <h1 class="text-3xl font-bold">Table Management</h1>
+          <p class="text-gray-500 mt-1">
+            Search, filter, and maintain table capacity and service state.
           </p>
         </div>
 
-        <div class="flex gap-2">
-          <button
-            @click="openEditModal(table)"
-            class="w-20 bg-blue-500 text-white px-3 py-2 rounded-xl transition hover:bg-blue-600 hover:shadow-md"
-          >
-            Edit
-          </button>
+        <button
+          class="font-bold bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
+          @click="showAddModal = true"
+        >
+          Add Table
+        </button>
+      </div>
 
-          <button
-            @click="deleteTable(table.id)"
-            class="w-24 bg-red-500 text-white px-3 py-2 rounded-xl transition hover:bg-red-600 hover:shadow-md"
-          >
-            Delete
-          </button>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-lg p-4 shadow">
+          <p class="text-sm text-gray-500">Total Tables</p>
+          <p class="text-2xl font-bold">{{ tableCounts.total }}</p>
+        </div>
+
+        <div class="bg-white rounded-lg p-4 shadow">
+          <p class="text-sm text-gray-500">Available</p>
+          <p class="text-2xl font-bold text-green-600">
+            {{ tableCounts.available }}
+          </p>
+        </div>
+
+        <div class="bg-white rounded-lg p-4 shadow">
+          <p class="text-sm text-gray-500">Occupied</p>
+          <p class="text-2xl font-bold text-amber-600">
+            {{ tableCounts.occupied }}
+          </p>
+        </div>
+
+        <div class="bg-white rounded-lg p-4 shadow">
+          <p class="text-sm text-gray-500">Cleaning</p>
+          <p class="text-2xl font-bold text-blue-600">
+            {{ tableCounts.needsCleaning }}
+          </p>
         </div>
       </div>
-    </div>
 
-    <!-- EDIT TABLE MODAL -->
-    <div
-      v-if="showEditModal && selectedTable"
-      class="fixed inset-0 bg-black/50 flex justify-center items-center"
-    >
-      <div class="bg-white p-6 rounded-xl w-[500px]">
-        <input
-          v-model="selectedTable.name"
-          placeholder="Table Name"
-          class="w-full border p-2 mb-3"
-        />
+      <div class="bg-white rounded-lg shadow p-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input
+            v-model="search"
+            class="border border-gray-300 rounded-lg px-3 py-2"
+            placeholder="Search table or status"
+          />
 
-        <input
-          v-model.number="selectedTable.seats"
-          type="number"
-          placeholder="Seats"
-          class="w-full border p-2 mb-3"
-        />
+          <select
+            v-model="statusFilter"
+            class="border border-gray-300 rounded-lg px-3 py-2 bg-white"
+          >
+            <option value="all">All statuses</option>
+            <option value="available">Available</option>
+            <option value="occupied">Occupied</option>
+            <option value="reserved">Reserved</option>
+            <option value="cleaning">Cleaning</option>
+          </select>
 
-        <div class="mb-4">
+          <select
+            v-model="seatFilter"
+            class="border border-gray-300 rounded-lg px-3 py-2 bg-white"
+          >
+            <option value="all">All capacities</option>
+            <option value="small">1 to 2 seats</option>
+            <option value="medium">3 to 4 seats</option>
+            <option value="large">5+ seats</option>
+          </select>
+        </div>
+      </div>
+
+      <div v-if="loading" class="text-center py-12">Loading tables...</div>
+
+      <div
+        v-else-if="filteredTables.length === 0"
+        class="text-center py-12 text-gray-400 bg-white rounded-lg"
+      >
+        No tables found.
+      </div>
+
+      <div v-else class="space-y-4">
+        <div
+          v-for="table in filteredTables"
+          :key="table.id"
+          class="bg-white shadow rounded-lg p-4"
+        >
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 class="font-bold text-xl">{{ table.name }}</h2>
+              <p class="text-gray-500">Seats: {{ table.seats }}</p>
+
+              <span
+                class="inline-flex mt-2 px-3 py-1 rounded-full text-white text-sm capitalize"
+                :class="{
+                  'bg-green-500': table.status === 'available',
+                  'bg-yellow-500': table.status === 'occupied',
+                  'bg-purple-500': table.status === 'reserved',
+                  'bg-blue-500': table.status === 'cleaning',
+                }"
+              >
+                {{ table.status }}
+              </span>
+            </div>
+
+            <div class="flex gap-2">
+              <button
+                class="w-20 bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600"
+                @click="openEditModal(table)"
+              >
+                Edit
+              </button>
+
+              <button
+                class="w-24 bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600"
+                @click="deleteTable(table.id)"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="showEditModal && selectedTable"
+        class="fixed inset-0 bg-black/50 flex justify-center items-center z-50"
+      >
+        <div class="bg-white p-6 rounded-xl w-[500px] max-w-[94vw]">
+          <h2 class="text-2xl font-bold mb-4">Edit Table</h2>
+
+          <input
+            v-model="selectedTable.name"
+            placeholder="Table Name"
+            class="w-full border rounded-lg p-3 mb-3"
+          />
+
+          <input
+            v-model.number="selectedTable.seats"
+            type="number"
+            min="1"
+            placeholder="Seats"
+            class="w-full border rounded-lg p-3 mb-3"
+          />
+
           <label class="block text-sm font-medium text-gray-700 mb-2">
             Status
           </label>
 
           <select
             v-model="selectedTable.status"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+            class="w-full rounded-lg border border-gray-300 px-3 py-3 bg-white mb-4"
           >
-            <option value="available">🟢 Available</option>
-            <option value="occupied">🟡 Occupied</option>
-            <option value="reserved">🔵 Reserved</option>
-            <option value="cleaning">🔴 Cleaning</option>
+            <option value="available">Available</option>
+            <option value="occupied">Occupied</option>
+            <option value="reserved">Reserved</option>
+            <option value="cleaning">Cleaning</option>
           </select>
-        </div>
 
-        <div class="flex justify-end gap-3 mt-4">
-          <button
-            @click="showEditModal = false"
-            class="bg-gray-300 px-4 py-2 rounded"
-          >
-            Cancel
-          </button>
+          <div class="flex justify-end gap-3">
+            <button
+              class="bg-gray-200 px-4 py-2 rounded-lg"
+              @click="showEditModal = false"
+            >
+              Cancel
+            </button>
 
-          <button
-            @click="updateTable"
-            class="px-5 py-2 rounded-lg bg-blue-500 text-white font-medium transition hover:bg-blue-600 hover:shadow-md"
-          >
-            Save Changes
-          </button>
+            <button
+              class="px-5 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600"
+              @click="updateTable"
+            >
+              Save Changes
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- ADD MENU ITEM MODAL -->
-    <div
-      v-if="showAddModal"
-      class="fixed inset-0 bg-black/50 flex justify-center items-center"
-    >
-      <div class="bg-white p-6 rounded-xl w-[500px]">
-        <div class="mb-4">
+      <div
+        v-if="showAddModal"
+        class="fixed inset-0 bg-black/50 flex justify-center items-center z-50"
+      >
+        <div class="bg-white p-6 rounded-xl w-[500px] max-w-[94vw]">
+          <h2 class="text-2xl font-bold mb-4">Add Table</h2>
+
           <label class="block text-sm font-medium text-gray-700 mb-2">
             Table Name
           </label>
@@ -237,11 +347,9 @@ const deleteTable = async (id: number) => {
           <input
             v-model="newTable.name"
             placeholder="e.g. A1"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+            class="w-full rounded-lg border border-gray-300 px-3 py-3 mb-4"
           />
-        </div>
 
-        <div class="mb-4">
           <label class="block text-sm font-medium text-gray-700 mb-2">
             Seats
           </label>
@@ -251,39 +359,38 @@ const deleteTable = async (id: number) => {
             type="number"
             min="1"
             placeholder="Number of seats"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+            class="w-full rounded-lg border border-gray-300 px-3 py-3 mb-4"
           />
-        </div>
-        <div class="mb-4">
+
           <label class="block text-sm font-medium text-gray-700 mb-2">
             Status
           </label>
 
           <select
             v-model="newTable.status"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+            class="w-full rounded-lg border border-gray-300 px-3 py-3 bg-white mb-4"
           >
-            <option value="available">🟢 Available</option>
-            <option value="occupied">🟡 Occupied</option>
-            <option value="reserved">🔵 Reserved</option>
-            <option value="cleaning">🔴 Cleaning</option>
+            <option value="available">Available</option>
+            <option value="occupied">Occupied</option>
+            <option value="reserved">Reserved</option>
+            <option value="cleaning">Cleaning</option>
           </select>
-        </div>
 
-        <div class="flex justify-end gap-3 mt-4">
-          <button
-            @click="showAddModal = false"
-            class="px-5 py-2 rounded-lg bg-gray-200 text-gray-700 font-medium transition hover:bg-gray-300"
-          >
-            Cancel
-          </button>
+          <div class="flex justify-end gap-3">
+            <button
+              class="px-5 py-2 rounded-lg bg-gray-200 text-gray-700"
+              @click="showAddModal = false"
+            >
+              Cancel
+            </button>
 
-          <button
-            @click="createTable"
-            class="px-5 py-2 rounded-lg bg-green-500 text-white font-medium transition hover:bg-green-600 hover:shadow-md"
-          >
-            Save
-          </button>
+            <button
+              class="px-5 py-2 rounded-lg bg-green-500 text-white hover:bg-green-600"
+              @click="createTable"
+            >
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -29,7 +29,7 @@ const emit = defineEmits<{
           {{ toastStore.message }}
         </span>
 
-        <button class="font-bold" @click="emit('close')">✕</button>
+        <button class="font-bold" @click="emit('close')">x</button>
       </div>
     </div>
   </Transition>

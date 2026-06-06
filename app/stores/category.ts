@@ -54,6 +54,7 @@ export const useCategoryStore = defineStore("category", () => {
     }
 
     await loadCategories();
+    await loadSubCategories();
 
     return {
       success: true,

@@ -18,6 +18,16 @@ export const useTableStore = defineStore("table", () => {
 
   const tables = useState<RestaurantTable[]>("tables", () => []);
 
+  const normalizeTable = (table: any): RestaurantTable => ({
+    id: table.id,
+    name: table.name,
+    seats: table.seats,
+    status: table.status,
+    customerCount: table.customerCount ?? table.customer_count ?? undefined,
+    startTime: table.startTime ?? table.start_time ?? undefined,
+    timeLimit: table.timeLimit ?? table.time_limit ?? undefined,
+  });
+
   // backend functions..
   const loadTables = async () => {
     const { data, error } = await supabase
@@ -30,7 +40,7 @@ export const useTableStore = defineStore("table", () => {
       return false;
     }
 
-    tables.value = data ?? [];
+    tables.value = (data ?? []).map(normalizeTable);
 
     return true;
   };
@@ -65,19 +75,18 @@ export const useTableStore = defineStore("table", () => {
   
   const updateTable = async (
     tableId: number,
-    updatedTable: {
+    updatedTable: Partial<{
       name: string;
       seats: number;
       status: TableStatus;
-    },
+      customerCount: number | null;
+      startTime: string | null;
+      timeLimit: number | null;
+    }>,
   ) => {
     const { error } = await supabase
       .from("tables")
-      .update({
-        name: updatedTable.name,
-        seats: updatedTable.seats,
-        status: updatedTable.status,
-      })
+      .update(updatedTable)
       .eq("id", tableId);
 
     if (error) {
@@ -117,53 +126,249 @@ export const useTableStore = defineStore("table", () => {
   };
 
   // sessions functions..
-  const startSession = (
+  const startSession = async (
     tableId: number,
     payload: {
       customerCount: number;
       timeLimit?: number;
     },
   ) => {
+    const startTime = new Date().toISOString();
+    const result = await updateTable(tableId, {
+      status: "occupied",
+      customerCount: payload.customerCount,
+      timeLimit: payload.timeLimit ?? null,
+      startTime,
+    });
+
+    if (!result.success) return result;
+
     const table = tables.value.find((t) => t.id === tableId);
 
-    if (!table) return;
+    if (table) {
+      table.status = "occupied";
+      table.customerCount = payload.customerCount;
+      table.timeLimit = payload.timeLimit;
+      table.startTime = startTime;
+    }
 
-    table.status = "occupied";
-    table.customerCount = payload.customerCount;
-    table.timeLimit = payload.timeLimit;
-    table.startTime = new Date().toISOString();
+    return result;
   };
-  const updateSession = (
+  const updateSession = async (
     tableId: number,
     payload: {
       customerCount: number;
       timeLimit?: number;
     },
   ) => {
+    const result = await updateTable(tableId, {
+      customerCount: payload.customerCount,
+      timeLimit: payload.timeLimit ?? null,
+    });
+
+    if (!result.success) return result;
+
     const table = tables.value.find((t) => t.id === tableId);
 
-    if (!table) return;
+    if (table) {
+      table.customerCount = payload.customerCount;
+      table.timeLimit = payload.timeLimit;
+    }
 
-    table.customerCount = payload.customerCount;
-    table.timeLimit = payload.timeLimit;
+    return result;
   };
-  const setCleaning = (tableId: number) => {
+  const setCleaning = async (tableId: number) => {
+    const result = await updateTable(tableId, {
+      status: "cleaning",
+      customerCount: null,
+      timeLimit: null,
+      startTime: null,
+    });
+
+    if (!result.success) return result;
+
     const table = tables.value.find((t) => t.id === tableId);
 
-    if (!table) return;
+    if (table) {
+      table.status = "cleaning";
+      table.customerCount = undefined;
+      table.timeLimit = undefined;
+      table.startTime = undefined;
+    }
 
-    table.status = "cleaning";
-    table.startTime = undefined;
+    return result;
   };
-  const resetTable = (tableId: number) => {
+  const resetTable = async (tableId: number) => {
+    const result = await updateTable(tableId, {
+      status: "available",
+      customerCount: null,
+      timeLimit: null,
+      startTime: null,
+    });
+
+    if (!result.success) return result;
+
     const table = tables.value.find((t) => t.id === tableId);
 
-    if (!table) return;
+    if (table) {
+      table.status = "available";
+      table.customerCount = undefined;
+      table.timeLimit = undefined;
+      table.startTime = undefined;
+    }
 
-    table.status = "available";
-    table.customerCount = undefined;
-    table.timeLimit = undefined;
-    table.startTime = undefined;
+    return result;
+  };
+
+  const moveSession = async (sourceTableId: number, targetTableId: number) => {
+    const source = tables.value.find((table) => table.id === sourceTableId);
+    const target = tables.value.find((table) => table.id === targetTableId);
+
+    if (!source || !target) {
+      return {
+        success: false,
+        message: "Source or target table not found",
+      };
+    }
+
+    if (source.id === target.id) {
+      return {
+        success: false,
+        message: "Choose a different table",
+      };
+    }
+
+    if (target.status === "occupied") {
+      return {
+        success: false,
+        message: "Target table is already occupied. Use merge instead.",
+      };
+    }
+
+    let orderQuery = supabase
+      .from("orders")
+      .update({
+        table_id: target.id,
+        table_name: target.name,
+      })
+      .eq("table_name", source.name)
+      .eq("is_billed", false);
+
+    if (source.startTime) {
+      orderQuery = orderQuery.gte("created_at", source.startTime);
+    }
+
+    const { error: orderError } = await orderQuery;
+
+    if (orderError) {
+      console.error(orderError);
+      return {
+        success: false,
+        message: orderError.message,
+      };
+    }
+
+    const targetResult = await updateTable(target.id, {
+      status: "occupied",
+      customerCount: source.customerCount ?? 1,
+      timeLimit: source.timeLimit ?? null,
+      startTime: source.startTime ?? new Date().toISOString(),
+    });
+
+    if (!targetResult.success) return targetResult;
+
+    await updateTable(source.id, {
+      status: "cleaning",
+      customerCount: null,
+      timeLimit: null,
+      startTime: null,
+    });
+
+    await loadTables();
+
+    return {
+      success: true,
+      message: `Moved ${source.name} session to ${target.name}`,
+    };
+  };
+
+  const mergeSession = async (sourceTableId: number, targetTableId: number) => {
+    const source = tables.value.find((table) => table.id === sourceTableId);
+    const target = tables.value.find((table) => table.id === targetTableId);
+
+    if (!source || !target) {
+      return {
+        success: false,
+        message: "Source or target table not found",
+      };
+    }
+
+    if (source.id === target.id) {
+      return {
+        success: false,
+        message: "Choose a different table",
+      };
+    }
+
+    if (target.status !== "occupied") {
+      return {
+        success: false,
+        message: "Target table must be occupied for merge",
+      };
+    }
+
+    let orderQuery = supabase
+      .from("orders")
+      .update({
+        table_id: target.id,
+        table_name: target.name,
+      })
+      .eq("table_name", source.name)
+      .eq("is_billed", false);
+
+    if (source.startTime) {
+      orderQuery = orderQuery.gte("created_at", source.startTime);
+    }
+
+    const { error: orderError } = await orderQuery;
+
+    if (orderError) {
+      console.error(orderError);
+      return {
+        success: false,
+        message: orderError.message,
+      };
+    }
+
+    const sourceStart = source.startTime ? new Date(source.startTime).getTime() : null;
+    const targetStart = target.startTime ? new Date(target.startTime).getTime() : null;
+    const earliestStart =
+      sourceStart && targetStart
+        ? new Date(Math.min(sourceStart, targetStart)).toISOString()
+        : target.startTime ?? source.startTime ?? new Date().toISOString();
+
+    const targetResult = await updateTable(target.id, {
+      status: "occupied",
+      customerCount: (target.customerCount ?? 0) + (source.customerCount ?? 0),
+      timeLimit: target.timeLimit ?? source.timeLimit ?? null,
+      startTime: earliestStart,
+    });
+
+    if (!targetResult.success) return targetResult;
+
+    await updateTable(source.id, {
+      status: "cleaning",
+      customerCount: null,
+      timeLimit: null,
+      startTime: null,
+    });
+
+    await loadTables();
+
+    return {
+      success: true,
+      message: `Merged ${source.name} into ${target.name}`,
+    };
   };
 
   return {
@@ -180,5 +385,7 @@ export const useTableStore = defineStore("table", () => {
 
     setCleaning,
     resetTable,
+    moveSession,
+    mergeSession,
   };
 });

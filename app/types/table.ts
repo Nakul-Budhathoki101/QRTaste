@@ -1,15 +1,15 @@
 export type TableStatus =
   | "available"
   | "occupied"
-  | "warning"
-  | "timesup"
+  | "reserved"
   | "cleaning";
 
 export interface RestaurantTable {
   id: number;
   name: string;
+  seats: number;
   status: TableStatus;
-  customerCount: number;
-  startTime?: number;
+  customerCount?: number;
+  startTime?: string;
   timeLimit?: number;
 }

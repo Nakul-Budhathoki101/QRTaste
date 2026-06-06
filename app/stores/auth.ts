@@ -5,17 +5,25 @@ export const useAuthStore = defineStore("auth", () => {
   const supabase = useSupabase();
 
   const user = useState<any | null>("auth-user", () => null);
+  const initialized = useState("auth-initialized", () => false);
+  let unsubscribe: (() => void) | null = null;
 
   const init = async () => {
+    if (!import.meta.client) return;
+    if (initialized.value) return;
+
     const {
       data: { session },
     } = await supabase.auth.getSession();
 
     user.value = session?.user ?? null;
 
-    supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       user.value = session?.user ?? null;
     });
+
+    unsubscribe = data.subscription.unsubscribe;
+    initialized.value = true;
   };
 
   const login = async (email: string, password: string) => {
@@ -48,10 +56,15 @@ export const useAuthStore = defineStore("auth", () => {
     }
 
     user.value = null;
+    initialized.value = false;
+    unsubscribe?.();
+    unsubscribe = null;
 
     await navigateTo("/login");
   };
   const loadUser = async () => {
+    if (!import.meta.client) return;
+
     const {
       data: { user: authUser },
     } = await supabase.auth.getUser();
@@ -61,6 +74,7 @@ export const useAuthStore = defineStore("auth", () => {
 
   return {
     user,
+    initialized,
 
     init,
     login,

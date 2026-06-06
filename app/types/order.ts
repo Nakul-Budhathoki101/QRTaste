@@ -14,10 +14,11 @@ export interface Order {
   table_id: number;
   table_name: string;
 
-  items: OrderItem;
+  items: OrderItem | OrderItem[];
 
   total_price: number;
   status: OrderStatus;
+  is_billed?: boolean;
 
   created_at: string;
 }

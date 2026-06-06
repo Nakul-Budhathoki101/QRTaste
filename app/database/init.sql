@@ -1,61 +1,154 @@
-create table if not exists orders (
+-- Supabase initial schema for the hotel / restaurant table-service app.
+-- Safe to run more than once: creates missing tables and adds missing columns.
+
+create table if not exists public.tables (
     id bigint generated always as identity primary key,
-    table_name text not null,
-    items jsonb not null,
-    total_price bigint not null,
-    status text not null default 'pending',
-    created_at timestamptz default now()
+    name text not null unique,
+    seats integer not null default 1,
+    status text not null default 'available',
+    "customerCount" integer,
+    "startTime" timestamptz,
+    "timeLimit" integer,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
-create table if not exists table_bills (
+alter table public.tables add column if not exists seats integer not null default 1;
+alter table public.tables add column if not exists status text not null default 'available';
+alter table public.tables add column if not exists "customerCount" integer;
+alter table public.tables add column if not exists "startTime" timestamptz;
+alter table public.tables add column if not exists "timeLimit" integer;
+alter table public.tables add column if not exists created_at timestamptz not null default now();
+alter table public.tables add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists public.menu_categories (
     id bigint generated always as identity primary key,
-    table_name text not null,
-    items jsonb not null,
-    total_price bigint not null,
-    is_paid boolean default false,
-    created_at timestamptz default now()
+    name text not null unique,
+    sort_order integer not null default 0,
+    is_active boolean not null default true,
+    created_at timestamptz not null default now()
 );
 
-create table if not exists menu_items (
+alter table public.menu_categories add column if not exists sort_order integer not null default 0;
+alter table public.menu_categories add column if not exists is_active boolean not null default true;
+alter table public.menu_categories add column if not exists created_at timestamptz not null default now();
+
+create table if not exists public.menu_sub_categories (
+    id bigint generated always as identity primary key,
+    category_id bigint not null references public.menu_categories(id) on delete cascade,
+    name text not null,
+    sort_order integer not null default 0,
+    is_active boolean not null default true,
+    created_at timestamptz not null default now()
+);
+
+alter table public.menu_sub_categories add column if not exists category_id bigint;
+alter table public.menu_sub_categories add column if not exists sort_order integer not null default 0;
+alter table public.menu_sub_categories add column if not exists is_active boolean not null default true;
+alter table public.menu_sub_categories add column if not exists created_at timestamptz not null default now();
+
+create table if not exists public.menu_items (
     id bigint generated always as identity primary key,
     name text not null,
     description text,
-    price integer not null,
+    price numeric(10,2) not null default 0,
     image_url text,
-    category text default 'Food',
-    is_active boolean default true,
-    created_at timestamptz default now()
+    category_id bigint references public.menu_categories(id) on delete set null,
+    sub_category_id bigint references public.menu_sub_categories(id) on delete set null,
+    is_active boolean not null default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
-create table bills (
+alter table public.menu_items add column if not exists description text;
+alter table public.menu_items add column if not exists price numeric(10,2) not null default 0;
+alter table public.menu_items add column if not exists image_url text;
+alter table public.menu_items add column if not exists category_id bigint;
+alter table public.menu_items add column if not exists sub_category_id bigint;
+alter table public.menu_items add column if not exists is_active boolean not null default true;
+alter table public.menu_items add column if not exists created_at timestamptz not null default now();
+alter table public.menu_items add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists public.orders (
     id bigint generated always as identity primary key,
-    table_id bigint not null,
+    table_id bigint references public.tables(id) on delete set null,
+    table_name text not null,
+    items jsonb not null,
+    total_price numeric(10,2) not null default 0,
+    status text not null default 'pending',
+    is_billed boolean not null default false,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+alter table public.orders add column if not exists table_id bigint;
+alter table public.orders add column if not exists table_name text;
+alter table public.orders add column if not exists items jsonb not null default '[]'::jsonb;
+alter table public.orders add column if not exists total_price numeric(10,2) not null default 0;
+alter table public.orders add column if not exists status text not null default 'pending';
+alter table public.orders add column if not exists is_billed boolean not null default false;
+alter table public.orders add column if not exists created_at timestamptz not null default now();
+alter table public.orders add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists public.table_bills (
+    id bigint generated always as identity primary key,
+    table_id bigint references public.tables(id) on delete set null,
     table_name text not null,
     items jsonb not null,
     subtotal numeric(10,2) not null default 0,
-    tax numeric(10,2) not null default 0,
-    total numeric(10,2) not null default 0,
-    status text not null default 'unpaid',
+    tax_amount numeric(10,2) not null default 0,
+    total_price numeric(10,2) not null default 0,
+    payment_method text not null default 'online',
+    is_paid boolean not null default false,
+    paid_at timestamptz,
     created_at timestamptz not null default now(),
-    paid_at timestamptz
+    updated_at timestamptz not null default now()
 );
 
-create table menu_categories (
-    id bigint generated always as identity primary key,
-    name text not null unique,
-    sort_order int default 0,
-    is_active boolean default true,
-    created_at timestamptz default now()
-);
+alter table public.table_bills add column if not exists table_id bigint;
+alter table public.table_bills add column if not exists table_name text;
+alter table public.table_bills add column if not exists items jsonb not null default '[]'::jsonb;
+alter table public.table_bills add column if not exists subtotal numeric(10,2) not null default 0;
+alter table public.table_bills add column if not exists tax_amount numeric(10,2) not null default 0;
+alter table public.table_bills add column if not exists total_price numeric(10,2) not null default 0;
+alter table public.table_bills add column if not exists payment_method text not null default 'online';
+alter table public.table_bills add column if not exists is_paid boolean not null default false;
+alter table public.table_bills add column if not exists paid_at timestamptz;
+alter table public.table_bills add column if not exists created_at timestamptz not null default now();
+alter table public.table_bills add column if not exists updated_at timestamptz not null default now();
 
-create table menu_sub_categories (
-    id bigint generated always as identity primary key,
-    category_id bigint not null,
-    name text not null,
-    sort_order int default 0,
-    is_active boolean default true,
-    created_at timestamptz default now(),
-    constraint fk_menu_sub_category
-    foreign key (category_id)
-    references menu_categories(id)
-);
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'tables_status_check'
+  ) then
+    alter table public.tables
+      add constraint tables_status_check
+      check (status in ('available', 'occupied', 'reserved', 'cleaning'));
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint where conname = 'orders_status_check'
+  ) then
+    alter table public.orders
+      add constraint orders_status_check
+      check (status in ('pending', 'preparing', 'completed'));
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint where conname = 'table_bills_payment_method_check'
+  ) then
+    alter table public.table_bills
+      add constraint table_bills_payment_method_check
+      check (payment_method in ('online', 'barcode', 'credit_card', 'cash', 'other'));
+  end if;
+end $$;
+
+create index if not exists idx_tables_status on public.tables(status);
+create index if not exists idx_orders_status_created_at on public.orders(status, created_at desc);
+create index if not exists idx_orders_table_name_created_at on public.orders(table_name, created_at desc);
+create index if not exists idx_orders_unbilled_table on public.orders(table_name, is_billed, created_at desc);
+create index if not exists idx_table_bills_created_at on public.table_bills(created_at desc);
+create index if not exists idx_table_bills_payment_method on public.table_bills(payment_method);
+create index if not exists idx_menu_items_category on public.menu_items(category_id, sub_category_id);
+create index if not exists idx_menu_items_active on public.menu_items(is_active);

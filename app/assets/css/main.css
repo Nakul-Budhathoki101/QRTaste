@@ -1,3 +1,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .printable-qr,
+  .printable-qr *,
+  #bill-print-area,
+  #bill-print-area * {
+    visibility: visible;
+  }
+
+  .printable-qr,
+  #bill-print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 24px;
+    background: white;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

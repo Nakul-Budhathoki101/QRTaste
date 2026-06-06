@@ -2,16 +2,9 @@
 import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "~/lib/supabase";
 import { useSettingsStore } from "#imports";
+import type { OrderItem, RestaurantTable } from "~/types";
 
-interface RestaurantTable {
-  id: number;
-  name: string;
-  seats: number;
-  status: string;
-  customerCount?: number;
-  startTime?: string;
-  timeLimit?: number;
-}
+type PaymentMethod = "online" | "barcode" | "credit_card" | "cash" | "other";
 
 interface AggregatedItem {
   name: string;
@@ -29,21 +22,34 @@ const emit = defineEmits<{
   paid: [];
 }>();
 
+const paymentOptions: { label: string; value: PaymentMethod }[] = [
+  { label: "Online", value: "online" },
+  { label: "Barcode", value: "barcode" },
+  { label: "Credit Card", value: "credit_card" },
+  { label: "Cash", value: "cash" },
+  { label: "Other", value: "other" },
+];
+
 const supabase = useSupabase();
 const settingsStore = useSettingsStore();
+const orderStore = useOrderStore();
 
 const loading = ref(true);
 const paying = ref(false);
 const error = ref("");
 const orders = ref<any[]>([]);
+const paymentMethod = ref<PaymentMethod>("online");
+
+const normalizeItems = (items: OrderItem | OrderItem[] | null | undefined) => {
+  if (!items) return [];
+  return Array.isArray(items) ? items : [items];
+};
 
 const aggregatedItems = computed<AggregatedItem[]>(() => {
   const itemMap = new Map<string, AggregatedItem>();
 
   for (const order of orders.value) {
-    if (!order.items) continue;
-
-    for (const item of order.items) {
+    for (const item of normalizeItems(order.items)) {
       const key = `${item.name}_${item.price}`;
       const existing = itemMap.get(key);
 
@@ -64,25 +70,21 @@ const aggregatedItems = computed<AggregatedItem[]>(() => {
   return Array.from(itemMap.values());
 });
 
-const subtotal = computed(() => {
-  return aggregatedItems.value.reduce((sum, item) => sum + item.lineTotal, 0);
-});
+const subtotal = computed(() =>
+  aggregatedItems.value.reduce((sum, item) => sum + item.lineTotal, 0),
+);
 
-const taxAmount = computed(() => {
-  return Math.round(subtotal.value * (settingsStore.taxRate / 100));
-});
+const taxAmount = computed(() =>
+  Math.round(subtotal.value * (settingsStore.taxRate / 100)),
+);
 
-const grandTotal = computed(() => {
-  return subtotal.value + taxAmount.value;
-});
+const grandTotal = computed(() => subtotal.value + taxAmount.value);
 
 const sessionDuration = computed(() => {
-  if (!props.table.startTime) return "—";
+  if (!props.table.startTime) return "Unlimited";
 
   const start = new Date(props.table.startTime).getTime();
-  const now = Date.now();
-  const seconds = Math.floor((now - start) / 1000);
-
+  const seconds = Math.max(0, Math.floor((Date.now() - start) / 1000));
   const hrs = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
 
@@ -98,9 +100,9 @@ const fetchOrders = async () => {
     .from("orders")
     .select("*")
     .eq("table_name", props.table.name)
+    .eq("is_billed", false)
     .order("created_at", { ascending: true });
 
-  // Scope to current session if we have a start time
   if (props.table.startTime) {
     query = query.gte("created_at", props.table.startTime);
   }
@@ -108,8 +110,7 @@ const fetchOrders = async () => {
   const { data, error: fetchError } = await query;
 
   if (fetchError) {
-    error.value = "Failed to load orders";
-    console.error(fetchError);
+    error.value = `Failed to load orders: ${fetchError.message}`;
   } else {
     orders.value = data || [];
   }
@@ -117,21 +118,62 @@ const fetchOrders = async () => {
   loading.value = false;
 };
 
+const printBill = () => {
+  const printable = document.getElementById("bill-print-area");
+  if (!printable) return;
+
+  const printWindow = window.open("", "_blank", "width=420,height=720");
+  if (!printWindow) return;
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Bill - Table ${props.table.name}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 16px; color: #111; }
+          .row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; }
+          .total { border-top: 1px solid #111; margin-top: 12px; padding-top: 12px; font-size: 20px; font-weight: 700; }
+          .muted { color: #555; font-size: 12px; }
+        </style>
+      </head>
+      <body>${printable.innerHTML.replaceAll("JPY", settingsStore.currencyLabel)}</body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+};
+
 const markAsPaid = async () => {
   paying.value = true;
+  error.value = "";
 
   const { error: insertError } = await supabase.from("table_bills").insert([
     {
+      table_id: props.table.id,
       table_name: props.table.name,
       items: aggregatedItems.value,
+      subtotal: subtotal.value,
+      tax_amount: taxAmount.value,
       total_price: grandTotal.value,
+      payment_method: paymentMethod.value,
       is_paid: true,
+      paid_at: new Date().toISOString(),
     },
   ]);
 
   if (insertError) {
     error.value = `Failed to save bill: ${insertError.message}`;
-    console.error(insertError);
+    paying.value = false;
+    return;
+  }
+
+  const billResult = await orderStore.markOrdersBilled(
+    orders.value.map((order) => order.id),
+  );
+
+  if (!billResult.success) {
+    error.value = `Bill saved, but orders were not closed: ${billResult.message}`;
     paying.value = false;
     return;
   }
@@ -140,19 +182,21 @@ const markAsPaid = async () => {
   emit("paid");
 };
 
-onMounted(fetchOrders);
+onMounted(() => {
+  settingsStore.loadSettings();
+  fetchOrders();
+});
 </script>
 
 <template>
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div
-      class="bg-white rounded-3xl shadow-2xl w-[480px] max-h-[90vh] flex flex-col overflow-hidden"
+      class="bg-white rounded-3xl shadow-2xl w-[520px] max-w-[94vw] max-h-[90vh] flex flex-col overflow-hidden"
     >
-      <!-- HEADER -->
       <div class="bg-gray-900 text-white p-6">
         <div class="flex justify-between items-start">
           <div>
-            <h2 class="text-2xl font-bold">💰 Checkout</h2>
+            <h2 class="text-2xl font-bold">Checkout</h2>
             <p class="text-gray-300 mt-1">Table {{ table.name }}</p>
           </div>
 
@@ -160,35 +204,28 @@ onMounted(fetchOrders);
             class="text-gray-400 hover:text-white text-2xl"
             @click="$emit('close')"
           >
-            ✕
+            x
           </button>
         </div>
 
-        <!-- Session Info -->
-        <div class="flex gap-6 mt-4 text-sm text-gray-300">
+        <div class="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm text-gray-300">
           <span v-if="table.customerCount">
-            👥 {{ table.customerCount }} customers
+            {{ table.customerCount }} customers
           </span>
-
-          <span> ⏱️ {{ sessionDuration }} </span>
-
-          <span> 📋 {{ orders.length }} orders </span>
+          <span>{{ sessionDuration }}</span>
+          <span>{{ orders.length }} orders</span>
         </div>
       </div>
 
-      <!-- BODY -->
       <div class="flex-1 overflow-y-auto p-6">
-        <!-- Loading -->
         <div v-if="loading" class="text-center py-8 text-gray-400">
           Loading orders...
         </div>
 
-        <!-- Error -->
         <div v-else-if="error" class="text-center py-8 text-red-500">
           {{ error }}
         </div>
 
-        <!-- Empty -->
         <div
           v-else-if="aggregatedItems.length === 0"
           class="text-center py-8 text-gray-400"
@@ -196,48 +233,79 @@ onMounted(fetchOrders);
           No orders found for this session.
         </div>
 
-        <!-- Items -->
-        <div v-else>
+        <div v-else id="bill-print-area">
+          <div class="mb-5">
+            <h3 class="text-xl font-bold">{{ settingsStore.restaurantName }}</h3>
+            <p class="text-sm text-gray-500">Table {{ table.name }}</p>
+            <p class="text-sm text-gray-500">
+              {{ new Date().toLocaleString() }}
+            </p>
+          </div>
+
           <div class="space-y-3">
             <div
               v-for="(item, index) in aggregatedItems"
               :key="index"
-              class="flex justify-between items-center py-2 border-b border-gray-100"
+              class="row flex justify-between items-center py-2 border-b border-gray-100"
             >
               <div class="flex-1">
                 <p class="font-medium">{{ item.name }}</p>
-                <p class="text-sm text-gray-400">
-                  ¥{{ item.price }} × {{ item.quantity }}
+                <p class="muted text-sm text-gray-400">
+                  {{ settingsStore.currencyLabel }} {{ item.price }} x {{ item.quantity }}
                 </p>
               </div>
 
-              <span class="font-bold"> ¥{{ item.lineTotal }} </span>
+              <span class="font-bold">
+                {{ settingsStore.currencyLabel }} {{ item.lineTotal }}
+              </span>
             </div>
           </div>
 
-          <!-- Totals -->
           <div class="mt-6 pt-4 border-t-2 border-gray-200 space-y-2">
-            <div class="flex justify-between text-gray-600">
+            <div class="row flex justify-between text-gray-600">
               <span>Subtotal</span>
-              <span>¥{{ subtotal }}</span>
+              <span>{{ settingsStore.currencyLabel }} {{ subtotal }}</span>
             </div>
 
-            <div class="flex justify-between text-gray-600">
+            <div class="row flex justify-between text-gray-600">
               <span>Tax ({{ settingsStore.taxRate }}%)</span>
-              <span>¥{{ taxAmount }}</span>
+              <span>{{ settingsStore.currencyLabel }} {{ taxAmount }}</span>
             </div>
 
             <div
-              class="flex justify-between text-2xl font-bold pt-2 border-t border-gray-200"
+              class="row total flex justify-between text-2xl font-bold pt-2 border-t border-gray-200"
             >
               <span>Total</span>
-              <span>¥{{ grandTotal }}</span>
+              <span>{{ settingsStore.currencyLabel }} {{ grandTotal }}</span>
+            </div>
+
+            <div class="row flex justify-between text-gray-600">
+              <span>Payment</span>
+              <span class="capitalize">{{ paymentMethod.replace("_", " ") }}</span>
             </div>
           </div>
         </div>
+
+        <div v-if="aggregatedItems.length" class="mt-6">
+          <label class="block text-sm font-bold text-gray-700 mb-2">
+            Payment Method
+          </label>
+
+          <select
+            v-model="paymentMethod"
+            class="w-full border border-gray-300 rounded-xl px-3 py-3 bg-white"
+          >
+            <option
+              v-for="option in paymentOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </div>
       </div>
 
-      <!-- FOOTER -->
       <div class="p-6 border-t bg-gray-50">
         <div class="flex gap-3">
           <button
@@ -248,11 +316,19 @@ onMounted(fetchOrders);
           </button>
 
           <button
-            class="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold text-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="flex-1 bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 disabled:opacity-50"
+            :disabled="loading || aggregatedItems.length === 0"
+            @click="printBill"
+          >
+            Print Bill
+          </button>
+
+          <button
+            class="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
             :disabled="paying || aggregatedItems.length === 0"
             @click="markAsPaid"
           >
-            {{ paying ? "Processing..." : "✅ Mark as Paid" }}
+            {{ paying ? "Processing..." : "Mark Paid" }}
           </button>
         </div>
       </div>

@@ -35,7 +35,12 @@ export const useOrderStore = defineStore("order", () => {
   };
 
   const createOrder = async (order: Omit<Order, "id">) => {
-    const { error } = await supabase.from("orders").insert([order]);
+    const { error } = await supabase.from("orders").insert([
+      {
+        ...order,
+        is_billed: order.is_billed ?? false,
+      },
+    ]);
 
     if (error) {
       console.error(error);
@@ -99,6 +104,39 @@ export const useOrderStore = defineStore("order", () => {
     };
   };
 
+  const markOrdersBilled = async (orderIds: number[]) => {
+    if (orderIds.length === 0) {
+      return {
+        success: true,
+        message: "No orders to mark as billed",
+      };
+    }
+
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        is_billed: true,
+        status: "completed",
+      })
+      .in("id", orderIds);
+
+    if (error) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+
+    await loadOrders();
+
+    return {
+      success: true,
+      message: "Orders marked as billed",
+    };
+  };
+
   const getOrderById = (orderId: number) => {
     return orders.value.find((order) => order.id === orderId) || null;
   };
@@ -147,6 +185,7 @@ export const useOrderStore = defineStore("order", () => {
 
     createOrder,
     updateStatus,
+    markOrdersBilled,
     deleteOrder,
     subscribeOrders,
 
