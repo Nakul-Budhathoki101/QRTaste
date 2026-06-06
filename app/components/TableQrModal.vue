@@ -36,7 +36,8 @@ onMounted(() => {
 
       <div class="mt-6 text-center">
         <p class="text-gray-500 break-all">
-          {{ tableUrl }}
+          <!-- {{ tableUrl }} -->
+          <a :href="tableUrl" target="_blank">{{ tableUrl }}</a>
         </p>
       </div>
 

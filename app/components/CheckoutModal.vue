@@ -251,7 +251,8 @@ onMounted(() => {
               <div class="flex-1">
                 <p class="font-medium">{{ item.name }}</p>
                 <p class="muted text-sm text-gray-400">
-                  {{ settingsStore.currencyLabel }} {{ item.price }} x {{ item.quantity }}
+                  {{ settingsStore.currencyLabel }} {{ item.price }} x
+                  {{ item.quantity }}
                 </p>
               </div>
 
@@ -281,7 +282,9 @@ onMounted(() => {
 
             <div class="row flex justify-between text-gray-600">
               <span>Payment</span>
-              <span class="capitalize">{{ paymentMethod.replace("_", " ") }}</span>
+              <span class="capitalize">
+                {{ paymentMethod.replace("_", " ") }}
+              </span>
             </div>
           </div>
         </div>

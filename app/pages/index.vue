@@ -67,6 +67,10 @@ const formatTime = (seconds: number) => {
 };
 
 const openTableModal = (table: RestaurantTable) => {
+  if (table.status === "cleaning") {
+    tableStore.resetTable(table.id);
+    return;
+  }
   selectedTable.value = table;
 };
 

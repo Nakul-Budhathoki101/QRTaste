@@ -11,6 +11,12 @@ const categoryStore = useCategoryStore();
 
 const activeCategoryId = ref<number>();
 const showOrders = ref(false);
+const showItemQuantity = ref(false);
+const selectedItem = ref<MenuItem | null>(null);
+const selectedQuantity = ref(1);
+
+const tableName = String(route.params.table);
+
 onMounted(async () => {
   await Promise.all([
     tableStore.loadTables(),
@@ -27,19 +33,11 @@ onMounted(async () => {
   orderStore.subscribeOrders();
 });
 
-//table information
-const tableName = String(route.params.table);
-const tableData = computed(() => {
-  return tableStore.tables.find((table) => table.name === tableName);
-});
+const tableData = computed(() =>
+  tableStore.tables.find((table) => table.name === tableName),
+);
 
 const categories = computed(() => categoryStore.categories);
-
-const getCategoryName = (categoryId: number) =>
-  categoryStore.categories.find((c) => c.id === categoryId)?.name ?? "-";
-
-const getSubCategoryName = (subCategoryId: number) =>
-  categoryStore.subCategories.find((s) => s.id === subCategoryId)?.name ?? "-";
 
 const activeSubCategories = computed(() => {
   if (!activeCategoryId.value) return [];
@@ -62,8 +60,10 @@ const myOrders = computed(() => {
     if (order.is_billed) return false;
 
     if (tableData.value?.startTime) {
-      return new Date(order.created_at).getTime() >=
-        new Date(tableData.value.startTime).getTime();
+      return (
+        new Date(order.created_at).getTime() >=
+        new Date(tableData.value.startTime).getTime()
+      );
     }
 
     return true;
@@ -119,28 +119,11 @@ const groupedMenu = computed(() => {
       grouped[subCategoryId] = [];
     }
 
-    const items = grouped[subCategoryId];
-
-    items.push(item);
+    grouped[subCategoryId].push(item);
   });
 
   return grouped;
 });
-
-let observer: IntersectionObserver;
-
-const scrollToSection = (sub: string) => {
-  document.getElementById(sub)?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
-};
-
-const showItemQuantity = ref(false);
-
-const selectedItem = ref<MenuItem | null>(null);
-
-const selectedQuantity = ref(1);
 
 const addItem = (item: MenuItem) => {
   selectedItem.value = item;
@@ -150,6 +133,7 @@ const addItem = (item: MenuItem) => {
 
 const addItemFinal = async () => {
   if (!selectedItem.value) return;
+
   if (!tableData.value) {
     toastStore.open("This table does not exist", "error");
     return;
@@ -163,13 +147,12 @@ const addItemFinal = async () => {
   };
 
   const result = await orderStore.createOrder({
-    table_id: tableData.value?.id,
-    table_name: tableData.value?.name,
-
+    table_id: tableData.value.id,
+    table_name: tableData.value.name,
     items: currentOrder,
-
     total_price: selectedItem.value.price * selectedQuantity.value,
     status: "pending",
+    is_billed: false,
     created_at: new Date().toISOString(),
   });
 
@@ -185,12 +168,8 @@ const addItemFinal = async () => {
   <div class="min-h-screen bg-gray-100 pb-24">
     <div class="sticky top-0 z-50 bg-white shadow-md">
       <div class="p-3 border-b">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <p class="text-sm text-gray-500">Self Order</p>
-            <h1 class="text-2xl font-bold">Table {{ tableName }}</h1>
-          </div>
-        </div>
+        <p class="text-sm text-gray-500">Self Order</p>
+        <h1 class="text-2xl font-bold">Table {{ tableName }}</h1>
       </div>
 
       <div class="flex gap-3 overflow-x-auto text-l p-2">
@@ -229,6 +208,7 @@ const addItemFinal = async () => {
           {{ sub.name }}
         </div>
       </div>
+
       <div class="grid grid-cols-2 gap-4 px-3">
         <div
           v-for="item in groupedMenu[sub.id]"
@@ -246,8 +226,6 @@ const addItemFinal = async () => {
 
             <div v-else class="flex flex-col items-center text-gray-400">
               <span class="text-sm">No Image</span>
-
-              <span> No Image </span>
             </div>
           </div>
 
@@ -260,7 +238,7 @@ const addItemFinal = async () => {
           </p>
 
           <div class="flex justify-between items-center mt-4">
-            <span class="text-xl font-bold"> JPY {{ item.price }} </span>
+            <span class="text-xl font-bold">JPY {{ item.price }}</span>
 
             <button
               class="bg-black text-white px-4 py-2 rounded-xl"
@@ -281,7 +259,11 @@ const addItemFinal = async () => {
           <p class="font-bold">My Orders: JPY {{ orderSubtotal }}</p>
           <p class="text-xs text-gray-500 truncate">
             <span v-if="latestOrderPreview.length">
-              {{ latestOrderPreview.map((item) => `${item.name} x${item.quantity}`).join(" | ") }}
+              {{
+                latestOrderPreview
+                  .map((item) => `${item.name} x${item.quantity}`)
+                  .join(" | ")
+              }}
             </span>
             <span v-else>Tap View to see your current order list.</span>
           </p>
@@ -345,7 +327,6 @@ const addItemFinal = async () => {
     </div>
   </div>
 
-  <!-- QUANTITY CONFIRMATION -->
   <div
     v-if="showItemQuantity"
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
@@ -389,7 +370,7 @@ const addItemFinal = async () => {
           class="flex-1 bg-green-500 text-white rounded-xl py-3 font-bold"
           @click="addItemFinal"
         >
-          ADD
+          Add
         </button>
       </div>
     </div>
