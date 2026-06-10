@@ -24,6 +24,7 @@ const orderStore = useOrderStore();
 const authStore = useAuthStore();
 const categoryStore = useCategoryStore();
 const toastStore = useToastStore();
+const reservationStore = useReservationStore();
 
 const showSettings = ref(false);
 const qrTableName = ref("");
@@ -39,6 +40,7 @@ onMounted(async () => {
   await billStore.loadBills();
   await categoryStore.loadCategories();
   await orderStore.loadOrders();
+  await reservationStore.loadReservations();
   orderStore.subscribeOrders();
 
   interval = setInterval(() => {
@@ -73,6 +75,18 @@ const openTableModal = (table: RestaurantTable) => {
   }
   selectedTable.value = table;
 };
+
+const getTodayReservations = (tableId: number) =>
+  reservationStore.getReservationsForTableToday(tableId);
+
+const getNextReservation = (tableId: number) =>
+  reservationStore.getNextReservationForTableToday(tableId);
+
+const formatReservationTime = (value: string) =>
+  new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 const closeModal = () => {
   selectedTable.value = null;
@@ -197,10 +211,14 @@ const dashboardStats = computed(() => ({
   paidRevenue: billStore.totalRevenue,
   cleaningTables: tableStore.tables.filter((table) => table.status === "cleaning")
     .length,
+  reservedToday: tableStore.tables.filter(
+    (table) => getTodayReservations(table.id).length > 0,
+  ).length,
 }));
 
 const quickLinks = [
   { label: "Tables", to: "/admin/table" },
+  { label: "Reservations", to: "/admin/reservation" },
   { label: "Menu", to: "/admin/menu" },
   { label: "Categories", to: "/admin/category" },
   { label: "Billing", to: "/admin/billing" },
@@ -286,9 +304,9 @@ const handlePaid = async () => {
         </div>
 
         <div class="bg-white rounded-lg p-4 shadow border-l-4 border-purple-500">
-          <p class="text-sm text-gray-500">Paid Revenue</p>
+          <p class="text-sm text-gray-500">Reserved Today</p>
           <p class="text-3xl font-bold">
-            {{ settingsStore.currencyLabel }} {{ dashboardStats.paidRevenue }}
+            {{ dashboardStats.reservedToday }}
           </p>
         </div>
       </div>
@@ -302,7 +320,7 @@ const handlePaid = async () => {
             </p>
           </div>
 
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <NuxtLink
               v-for="link in quickLinks"
               :key="link.to"
@@ -332,8 +350,28 @@ const handlePaid = async () => {
           @click="openTableModal(table)"
         >
           <div>
-            <h2 class="text-2xl font-bold">{{ table.name }}</h2>
+            <div class="flex items-start justify-between gap-3">
+              <h2 class="text-2xl font-bold">{{ table.name }}</h2>
+
+              <span
+                v-if="getTodayReservations(table.id).length"
+                class="bg-white text-purple-700 text-xs font-bold px-2 py-1 rounded-full"
+              >
+                Reserved
+              </span>
+            </div>
             <p class="mt-4 font-bold capitalize">{{ table.status }}</p>
+
+            <p
+              v-if="getNextReservation(table.id)"
+              class="mt-2 text-sm font-semibold bg-black/15 rounded-lg px-2 py-1"
+            >
+              Next reservation:
+              {{ formatReservationTime(getNextReservation(table.id)!.reserved_at) }}
+              -
+              {{ getNextReservation(table.id)!.customer_name }}
+              ({{ getNextReservation(table.id)!.guest_count }})
+            </p>
 
             <div class="mt-3 h-6">
               <span v-if="table.customerCount">

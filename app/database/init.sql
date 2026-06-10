@@ -21,6 +21,31 @@ alter table public.tables add column if not exists "timeLimit" integer;
 alter table public.tables add column if not exists created_at timestamptz not null default now();
 alter table public.tables add column if not exists updated_at timestamptz not null default now();
 
+create table if not exists public.table_reservations (
+    id bigint generated always as identity primary key,
+    table_id bigint references public.tables(id) on delete set null,
+    table_name text not null,
+    customer_name text not null,
+    customer_phone text,
+    guest_count integer not null default 1,
+    reserved_at timestamptz not null,
+    status text not null default 'reserved',
+    notes text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+alter table public.table_reservations add column if not exists table_id bigint;
+alter table public.table_reservations add column if not exists table_name text;
+alter table public.table_reservations add column if not exists customer_name text;
+alter table public.table_reservations add column if not exists customer_phone text;
+alter table public.table_reservations add column if not exists guest_count integer not null default 1;
+alter table public.table_reservations add column if not exists reserved_at timestamptz;
+alter table public.table_reservations add column if not exists status text not null default 'reserved';
+alter table public.table_reservations add column if not exists notes text;
+alter table public.table_reservations add column if not exists created_at timestamptz not null default now();
+alter table public.table_reservations add column if not exists updated_at timestamptz not null default now();
+
 create table if not exists public.menu_categories (
     id bigint generated always as identity primary key,
     name text not null unique,
@@ -136,6 +161,14 @@ begin
   end if;
 
   if not exists (
+    select 1 from pg_constraint where conname = 'table_reservations_status_check'
+  ) then
+    alter table public.table_reservations
+      add constraint table_reservations_status_check
+      check (status in ('reserved', 'seated', 'cancelled', 'completed'));
+  end if;
+
+  if not exists (
     select 1 from pg_constraint where conname = 'table_bills_payment_method_check'
   ) then
     alter table public.table_bills
@@ -145,6 +178,8 @@ begin
 end $$;
 
 create index if not exists idx_tables_status on public.tables(status);
+create index if not exists idx_table_reservations_table_time on public.table_reservations(table_id, reserved_at);
+create index if not exists idx_table_reservations_status_time on public.table_reservations(status, reserved_at);
 create index if not exists idx_orders_status_created_at on public.orders(status, created_at desc);
 create index if not exists idx_orders_table_name_created_at on public.orders(table_name, created_at desc);
 create index if not exists idx_orders_unbilled_table on public.orders(table_name, is_billed, created_at desc);

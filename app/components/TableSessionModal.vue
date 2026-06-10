@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RestaurantTable } from "#imports";
+import type { TableReservation } from "~/types";
 
 const props = defineProps<{
   table: RestaurantTable;
@@ -26,6 +27,7 @@ const settings = useSettingsStore();
 const tableStore = useTableStore();
 const orderStore = useOrderStore();
 const toastStore = useToastStore();
+const reservationStore = useReservationStore();
 
 const localCustomerCount = ref(props.table.customerCount ?? 1);
 const localTimeLimit = ref(props.table.timeLimit ?? settings.defaultTimeLimit);
@@ -33,6 +35,11 @@ const enableTimeLimit = ref(Boolean(props.table?.timeLimit));
 const selectedMoveTargetId = ref<number>();
 const selectedMergeTargetId = ref<number>();
 const now = ref(Date.now());
+const reservationCustomerName = ref("");
+const reservationCustomerPhone = ref("");
+const reservationGuestCount = ref(props.table.seats || 1);
+const reservationAt = ref("");
+const reservationNotes = ref("");
 let timer: ReturnType<typeof setInterval>;
 
 const isOccupied = computed(() => props.table.status === "occupied");
@@ -49,6 +56,76 @@ const occupiedMergeTargets = computed(() =>
     (table) => table.id !== props.table.id && table.status === "occupied",
   ),
 );
+
+const todayReservations = computed(() =>
+  reservationStore.getReservationsForTableToday(props.table.id),
+);
+
+const nextReservation = computed(() =>
+  reservationStore.getNextReservationForTableToday(props.table.id),
+);
+
+const formatReservationTime = (value: string) =>
+  new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+const getReservationTimeState = (value: string) => {
+  const minutesFromNow = Math.floor(
+    (new Date(value).getTime() - Date.now()) / 60000,
+  );
+
+  if (minutesFromNow < -15) return "late";
+  if (minutesFromNow <= 10) return "due";
+  return "upcoming";
+};
+
+const getReservationTimeLabel = (value: string) => {
+  const state = getReservationTimeState(value);
+
+  if (state === "late") return "Late / no-show window";
+  if (state === "due") return "Due now";
+  return "Upcoming";
+};
+
+const getNextReservationAfter = (reservationId: number) => {
+  const nowMs = Date.now();
+
+  return (
+    todayReservations.value
+      .filter((reservation) => reservation.id !== reservationId)
+      .filter((reservation) => new Date(reservation.reserved_at).getTime() > nowMs)
+      .sort(
+        (a, b) =>
+          new Date(a.reserved_at).getTime() -
+          new Date(b.reserved_at).getTime(),
+      )[0] || null
+  );
+};
+
+const getSafeTimeLimitForSeatedReservation = (reservationId: number) => {
+  const laterReservation = getNextReservationAfter(reservationId);
+
+  if (!laterReservation) return undefined;
+
+  const latestEnd =
+    new Date(laterReservation.reserved_at).getTime() - 10 * 60 * 1000;
+  const maxMinutes = Math.floor((latestEnd - Date.now()) / 60000);
+
+  if (maxMinutes <= 0) return 0;
+
+  return Math.min(settings.defaultTimeLimit, maxMinutes);
+};
+
+const maxSessionMinutesBeforeReservation = computed(() => {
+  if (!nextReservation.value) return null;
+
+  const latestEnd = new Date(nextReservation.value.reserved_at).getTime() - 10 * 60 * 1000;
+  const minutes = Math.floor((latestEnd - Date.now()) / 60000);
+
+  return Math.max(0, minutes);
+});
 
 const unbilledSessionOrders = computed(() => {
   if (!isOccupied.value) return [];
@@ -89,7 +166,35 @@ const elapsedLabel = computed(() => {
 const decidedTimeLimit = () =>
   enableTimeLimit.value ? localTimeLimit.value : undefined;
 
+const validateReservationTimeLimit = () => {
+  if (!nextReservation.value) return true;
+
+  const maxMinutes = maxSessionMinutesBeforeReservation.value ?? 0;
+
+  if (!enableTimeLimit.value) {
+    toastStore.open(
+      "This table has a reservation today. Set a time limit before starting.",
+      "error",
+    );
+    return false;
+  }
+
+  if (localTimeLimit.value > maxMinutes) {
+    toastStore.open(
+      `Time limit must end 10 minutes before the ${formatReservationTime(
+        nextReservation.value.reserved_at,
+      )} reservation. Max allowed: ${maxMinutes} minutes.`,
+      "error",
+    );
+    return false;
+  }
+
+  return true;
+};
+
 const handleStartSession = () => {
+  if (!validateReservationTimeLimit()) return;
+
   emit("start", {
     customerCount: localCustomerCount.value,
     timeLimit: decidedTimeLimit(),
@@ -97,10 +202,128 @@ const handleStartSession = () => {
 };
 
 const handleUpdateSession = () => {
+  if (!validateReservationTimeLimit()) return;
+
   emit("update", {
     customerCount: localCustomerCount.value,
     timeLimit: decidedTimeLimit(),
   });
+};
+
+const createReservation = async () => {
+  if (!reservationCustomerName.value.trim()) {
+    toastStore.open("Customer name is required", "error");
+    return;
+  }
+
+  if (!reservationAt.value) {
+    toastStore.open("Reservation time is required", "error");
+    return;
+  }
+
+  const reservedDate = new Date(reservationAt.value);
+
+  if (reservedDate.getTime() <= Date.now()) {
+    toastStore.open("Reservation time must be in the future", "error");
+    return;
+  }
+
+  if (reservationGuestCount.value > props.table.seats) {
+    toastStore.open(
+      `${props.table.name} only has ${props.table.seats} seat(s). Choose a larger table.`,
+      "error",
+    );
+    return;
+  }
+
+  if (
+    reservationStore.hasReservationConflict(
+      props.table.id,
+      reservedDate.toISOString(),
+    )
+  ) {
+    toastStore.open(
+      `${props.table.name} already has a reservation at this time.`,
+      "error",
+    );
+    return;
+  }
+
+  const result = await reservationStore.createReservation({
+    table_id: props.table.id,
+    table_name: props.table.name,
+    customer_name: reservationCustomerName.value.trim(),
+    customer_phone: reservationCustomerPhone.value.trim() || null,
+    guest_count: reservationGuestCount.value,
+    reserved_at: reservedDate.toISOString(),
+    status: "reserved",
+    notes: reservationNotes.value.trim() || null,
+  });
+
+  toastStore.open(result.message, result.success ? "success" : "error");
+
+  if (!result.success) return;
+
+  reservationCustomerName.value = "";
+  reservationCustomerPhone.value = "";
+  reservationGuestCount.value = props.table.seats || 1;
+  reservationAt.value = "";
+  reservationNotes.value = "";
+};
+
+const seatReservation = async (reservation: TableReservation) => {
+  if (isOccupied.value) {
+    toastStore.open("This table already has an active session.", "error");
+    return;
+  }
+
+  if (isCleaning.value) {
+    toastStore.open("Make this table available before seating the reservation.", "error");
+    return;
+  }
+
+  const safeTimeLimit = getSafeTimeLimitForSeatedReservation(reservation.id);
+
+  if (safeTimeLimit === 0) {
+    toastStore.open(
+      "The next reservation is too close. Cancel, move, or wait before seating.",
+      "error",
+    );
+    return;
+  }
+
+  const result = await reservationStore.updateReservationStatus(
+    reservation.id,
+    "seated",
+  );
+
+  toastStore.open(
+    result.success
+      ? `${reservation.customer_name} is seated at ${props.table.name}.`
+      : result.message,
+    result.success ? "success" : "error",
+  );
+
+  if (!result.success) return;
+
+  emit("start", {
+    customerCount: reservation.guest_count,
+    timeLimit: safeTimeLimit,
+  });
+};
+
+const cancelReservation = async (reservation: TableReservation) => {
+  const result = await reservationStore.updateReservationStatus(
+    reservation.id,
+    "cancelled",
+  );
+
+  toastStore.open(
+    result.success
+      ? `${reservation.customer_name}'s reservation was cancelled/no-show.`
+      : result.message,
+    result.success ? "success" : "error",
+  );
 };
 
 const setCleaning = async () => {
@@ -161,6 +384,7 @@ const mergeSession = async () => {
 
 onMounted(() => {
   orderStore.loadOrders();
+  reservationStore.loadReservations();
   timer = setInterval(() => {
     now.value = Date.now();
   }, 1000);
@@ -221,6 +445,14 @@ onUnmounted(() => {
         >
           This table has {{ unbilledSessionOrders.length }} unpaid order(s). Checkout, move, or merge before cleaning or clearing the table.
         </div>
+
+        <div
+          v-else-if="!isOccupied && nextReservation"
+          class="mt-4 bg-purple-400 text-purple-950 rounded-lg p-3 font-semibold"
+        >
+          Reserved today at {{ formatReservationTime(nextReservation.reserved_at) }}.
+          Session time must end 10 minutes before this reservation.
+        </div>
       </div>
 
       <div class="p-6 grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-5">
@@ -252,7 +484,9 @@ onUnmounted(() => {
         </section>
 
         <section class="bg-gray-50 rounded-xl p-4 border">
-          <h3 class="font-bold text-lg mb-4">Real World Actions</h3>
+          <h3 class="font-bold text-lg mb-4">
+            {{ isOccupied ? "Real World Actions" : "Reservations Today" }}
+          </h3>
 
           <div v-if="isOccupied" class="space-y-4">
             <div>
@@ -310,8 +544,117 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-else class="text-gray-500">
-            Start a session to move or merge table orders.
+          <div v-else class="space-y-4">
+            <div
+              v-if="todayReservations.length"
+              class="space-y-2 max-h-44 overflow-y-auto"
+            >
+              <div
+                v-for="reservation in todayReservations"
+                :key="reservation.id"
+                class="bg-white rounded-xl border p-3 shadow-sm"
+              >
+                <div class="flex justify-between gap-3">
+                  <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <p class="font-bold">{{ reservation.customer_name }}</p>
+                      <span
+                        class="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                        :class="{
+                          'bg-red-100 text-red-700':
+                            getReservationTimeState(reservation.reserved_at) === 'late',
+                          'bg-amber-100 text-amber-700':
+                            getReservationTimeState(reservation.reserved_at) === 'due',
+                          'bg-purple-100 text-purple-700':
+                            getReservationTimeState(reservation.reserved_at) === 'upcoming',
+                        }"
+                      >
+                        {{ getReservationTimeLabel(reservation.reserved_at) }}
+                      </span>
+                    </div>
+                    <p class="text-sm text-gray-500">
+                      {{ reservation.guest_count }} guests
+                      <span v-if="reservation.customer_phone">
+                        | {{ reservation.customer_phone }}
+                      </span>
+                    </p>
+                  </div>
+
+                  <p class="font-bold text-purple-700">
+                    {{ formatReservationTime(reservation.reserved_at) }}
+                  </p>
+                </div>
+
+                <p v-if="reservation.notes" class="text-sm text-gray-500 mt-2">
+                  {{ reservation.notes }}
+                </p>
+
+                <div class="grid grid-cols-2 gap-2 mt-3">
+                  <button
+                    class="bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700"
+                    @click="seatReservation(reservation)"
+                  >
+                    Seat
+                  </button>
+
+                  <button
+                    class="bg-gray-900 text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-black"
+                    @click="cancelReservation(reservation)"
+                  >
+                    Cancel / No-show
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="text-gray-500 bg-white border rounded-lg p-3">
+              No reservations for this table today.
+            </div>
+
+            <div class="border-t pt-4">
+              <h4 class="font-bold mb-3">Add Reservation</h4>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  v-model="reservationCustomerName"
+                  class="border border-gray-200 rounded-xl p-3 bg-white"
+                  placeholder="Customer name"
+                />
+
+                <input
+                  v-model="reservationCustomerPhone"
+                  class="border border-gray-200 rounded-xl p-3 bg-white"
+                  placeholder="Phone"
+                />
+
+                <input
+                  v-model.number="reservationGuestCount"
+                  type="number"
+                  min="1"
+                  class="border border-gray-200 rounded-xl p-3 bg-white"
+                  placeholder="Guests"
+                />
+
+                <input
+                  v-model="reservationAt"
+                  type="datetime-local"
+                  class="border border-gray-200 rounded-xl p-3 bg-white"
+                />
+              </div>
+
+              <textarea
+                v-model="reservationNotes"
+                class="w-full border border-gray-200 rounded-xl p-3 bg-white mt-3"
+                placeholder="Notes"
+              />
+
+              <button
+                class="w-full bg-purple-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-purple-700"
+                @click="createReservation"
+              >
+                Save Reservation
+              </button>
+            </div>
           </div>
         </section>
       </div>
