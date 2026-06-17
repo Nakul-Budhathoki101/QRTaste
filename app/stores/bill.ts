@@ -31,14 +31,16 @@ export const useBillStore = defineStore("bill", () => {
   };
 
   const createBill = async (
-    bill: Omit<TableBill, "id" | "created_at" | "is_paid"> & {
+    bill: Omit<TableBill, "id" | "created_at" | "is_paid" | "status"> & {
       is_paid?: boolean;
+      status?: TableBill["status"];
     },
   ) => {
     const { error } = await supabase.from("table_bills").insert([
       {
         ...bill,
         is_paid: bill.is_paid ?? false,
+        status: bill.status ?? (bill.is_paid ? "paid" : "unpaid"),
       },
     ]);
 
@@ -64,6 +66,7 @@ export const useBillStore = defineStore("bill", () => {
       .from("table_bills")
       .update({
         is_paid: true,
+        status: "paid",
         payment_method: paymentMethod,
         paid_at: new Date().toISOString(),
       })
@@ -83,6 +86,33 @@ export const useBillStore = defineStore("bill", () => {
     return {
       success: true,
       message: "Bill updated successfully",
+    };
+  };
+
+  const cancelBill = async (billId: number) => {
+    const { error } = await supabase
+      .from("table_bills")
+      .update({
+        status: "cancelled",
+        is_paid: false,
+        cancelled_at: new Date().toISOString(),
+      })
+      .eq("id", billId);
+
+    if (error) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+
+    await loadBills();
+
+    return {
+      success: true,
+      message: "Bill cancelled successfully",
     };
   };
 
@@ -116,23 +146,31 @@ export const useBillStore = defineStore("bill", () => {
     bills.value.filter((bill) => bill.table_name === tableName);
 
   const unpaidBills = computed(() =>
-    bills.value.filter((bill) => !bill.is_paid),
+    bills.value.filter((bill) => bill.status === "unpaid" || !bill.is_paid),
   );
 
-  const paidBills = computed(() => bills.value.filter((bill) => bill.is_paid));
+  const paidBills = computed(() =>
+    bills.value.filter((bill) => bill.status === "paid" || bill.is_paid),
+  );
 
   const totalRevenue = computed(() =>
     paidBills.value.reduce((sum, bill) => sum + Number(bill.total_price), 0),
+  );
+
+  const cancelledBills = computed(() =>
+    bills.value.filter((bill) => bill.status === "cancelled"),
   );
 
   return {
     bills,
     unpaidBills,
     paidBills,
+    cancelledBills,
     totalRevenue,
     loadBills,
     createBill,
     markPaid,
+    cancelBill,
     deleteBill,
     getBillById,
     getBillsByTable,

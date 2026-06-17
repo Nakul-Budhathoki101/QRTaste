@@ -26,7 +26,6 @@ const createReservationForm = () => ({
   notes: "",
 });
 
-const newReservation = ref(createReservationForm());
 const editReservation = ref(createReservationForm());
 
 const availableTables = computed(() =>
@@ -181,24 +180,6 @@ const validateReservationPayload = (
     reserved_at: reservedAt,
     notes: payload.notes.trim() || null,
   };
-};
-
-const createReservation = async () => {
-  const payload = validateReservationPayload(newReservation.value);
-
-  if (!payload) return;
-
-  const result = await reservationStore.createReservation({
-    ...payload,
-    status: "reserved",
-  });
-
-  toastStore.open(result.message, result.success ? "success" : "error");
-
-  if (!result.success) return;
-
-  newReservation.value = createReservationForm();
-  showAddModal.value = false;
 };
 
 const openEditModal = (reservation: TableReservation) => {
@@ -456,78 +437,11 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div
+      <ReservationModal
         v-if="showAddModal"
-        class="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4"
-      >
-        <div class="bg-white p-6 rounded-xl w-[620px] max-w-[96vw]">
-          <h2 class="text-2xl font-bold mb-4">Add Reservation</h2>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <select
-              v-model="newReservation.table_id"
-              class="border rounded-lg p-3 bg-white"
-            >
-              <option :value="undefined">Select table</option>
-              <option
-                v-for="table in availableTables"
-                :key="table.id"
-                :value="table.id"
-              >
-                {{ table.name }} - {{ table.seats }} seats
-              </option>
-            </select>
-
-            <input
-              v-model.number="newReservation.guest_count"
-              type="number"
-              min="1"
-              class="border rounded-lg p-3"
-              placeholder="Guests"
-            />
-
-            <input
-              v-model="newReservation.customer_name"
-              class="border rounded-lg p-3"
-              placeholder="Customer name"
-            />
-
-            <input
-              v-model="newReservation.customer_phone"
-              class="border rounded-lg p-3"
-              placeholder="Phone"
-            />
-
-            <input
-              v-model="newReservation.reserved_at"
-              type="datetime-local"
-              class="border rounded-lg p-3 sm:col-span-2"
-            />
-          </div>
-
-          <textarea
-            v-model="newReservation.notes"
-            class="w-full border rounded-lg p-3 mt-3"
-            placeholder="Notes"
-          />
-
-          <div class="flex justify-end gap-3 mt-4">
-            <button
-              class="bg-gray-200 px-4 py-2 rounded-lg"
-              @click="showAddModal = false"
-            >
-              Cancel
-            </button>
-
-            <button
-              class="px-5 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
-              @click="createReservation"
-            >
-              Save Reservation
-            </button>
-          </div>
-        </div>
-      </div>
+        @close="showAddModal = false"
+        @saved="reservationStore.loadReservations()"
+      />
 
       <div
         v-if="showEditModal && selectedReservation"

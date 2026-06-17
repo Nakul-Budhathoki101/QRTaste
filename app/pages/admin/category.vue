@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const categoryStore = useCategoryStore();
+const menuStore = useMenuStore();
 const toastStore = useToastStore();
 const confirmStore = useConfirmStore();
 
@@ -8,12 +9,17 @@ const search = ref("");
 const newCategory = ref("");
 const newSubCategory = ref("");
 const selectedCategoryId = ref<number>();
+const newOptionGroup = ref("");
+const newOptionGroupType = ref<"single" | "multiple">("single");
+const selectedOptionGroupId = ref<number>();
+const newOptionItem = ref("");
 
 onMounted(async () => {
   loading.value = true;
   await Promise.all([
     categoryStore.loadCategories(),
     categoryStore.loadSubCategories(),
+    menuStore.loadOptionGroups(),
   ]);
   loading.value = false;
 });
@@ -36,6 +42,9 @@ const filteredCategories = computed(() => {
 
 const subCategoriesFor = (categoryId: number) =>
   categoryStore.subCategories.filter((sub) => sub.category_id === categoryId);
+
+const optionsForGroup = (groupId: number) =>
+  menuStore.optionItems.filter((option) => option.group_id === groupId);
 
 const addCategory = async () => {
   const name = newCategory.value.trim();
@@ -117,6 +126,57 @@ const deleteSubCategory = async (id: number) => {
   const result = await categoryStore.deleteSubCategory(id);
   toastStore.open(result.message, result.success ? "success" : "error");
 };
+
+const addOptionGroup = async () => {
+  const name = newOptionGroup.value.trim();
+
+  if (!name) {
+    toastStore.open("Option group name is required", "error");
+    return;
+  }
+
+  const result = await menuStore.createOptionGroup(name, newOptionGroupType.value);
+  toastStore.open(result.message, result.success ? "success" : "error");
+
+  if (result.success) newOptionGroup.value = "";
+};
+
+const addOptionItem = async () => {
+  const name = newOptionItem.value.trim();
+
+  if (!selectedOptionGroupId.value) {
+    toastStore.open("Select an option group first", "error");
+    return;
+  }
+
+  if (!name) {
+    toastStore.open("Option name is required", "error");
+    return;
+  }
+
+  const result = await menuStore.createOptionItem(selectedOptionGroupId.value, name);
+  toastStore.open(result.message, result.success ? "success" : "error");
+
+  if (result.success) newOptionItem.value = "";
+};
+
+const deleteOptionGroup = async (id: number) => {
+  const group = menuStore.optionGroups.find((item) => item.id === id);
+  const confirmed = await confirmStore.confirm({
+    title: "Delete Option Group",
+    message: `Delete "${group?.name ?? "option group"}" and its options?`,
+  });
+
+  if (!confirmed) return;
+
+  const result = await menuStore.deleteOptionGroup(id);
+  toastStore.open(result.message, result.success ? "success" : "error");
+};
+
+const deleteOptionItem = async (id: number) => {
+  const result = await menuStore.deleteOptionItem(id);
+  toastStore.open(result.message, result.success ? "success" : "error");
+};
 </script>
 
 <template>
@@ -145,7 +205,7 @@ const deleteSubCategory = async (id: number) => {
         />
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="bg-white rounded-lg p-4 shadow">
           <p class="text-sm text-gray-500">Categories</p>
           <p class="text-2xl font-bold">{{ categoryStore.categories.length }}</p>
@@ -161,6 +221,11 @@ const deleteSubCategory = async (id: number) => {
         <div class="bg-white rounded-lg p-4 shadow">
           <p class="text-sm text-gray-500">Visible Results</p>
           <p class="text-2xl font-bold">{{ filteredCategories.length }}</p>
+        </div>
+
+        <div class="bg-white rounded-lg p-4 shadow">
+          <p class="text-sm text-gray-500">Option Groups</p>
+          <p class="text-2xl font-bold">{{ menuStore.optionGroups.length }}</p>
         </div>
       </div>
 
@@ -208,6 +273,62 @@ const deleteSubCategory = async (id: number) => {
             <button
               class="bg-green-500 text-white px-6 rounded-lg hover:bg-green-600 py-3"
               @click="addSubCategory"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <div class="bg-white p-5 rounded-lg shadow">
+          <h2 class="text-xl font-bold mb-4">Add Option Group</h2>
+
+          <div class="grid grid-cols-1 sm:grid-cols-[1fr_150px_auto] gap-3">
+            <input
+              v-model="newOptionGroup"
+              placeholder="e.g. Mixer, Spicy Level"
+              class="border rounded-lg p-3"
+            />
+
+            <select v-model="newOptionGroupType" class="border rounded-lg p-3">
+              <option value="single">Single choice</option>
+              <option value="multiple">Multiple choice</option>
+            </select>
+
+            <button
+              class="bg-green-500 text-white px-6 rounded-lg hover:bg-green-600 py-3"
+              @click="addOptionGroup"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-lg shadow">
+          <h2 class="text-xl font-bold mb-4">Add Option</h2>
+
+          <div class="grid grid-cols-1 sm:grid-cols-[180px_1fr_auto] gap-3">
+            <select v-model="selectedOptionGroupId" class="border rounded-lg p-3">
+              <option :value="undefined">Select Group</option>
+              <option
+                v-for="group in menuStore.optionGroups"
+                :key="group.id"
+                :value="group.id"
+              >
+                {{ group.name }}
+              </option>
+            </select>
+
+            <input
+              v-model="newOptionItem"
+              placeholder="e.g. Hot Water, With Soda"
+              class="border rounded-lg p-3"
+            />
+
+            <button
+              class="bg-green-500 text-white px-6 rounded-lg hover:bg-green-600 py-3"
+              @click="addOptionItem"
             >
               Add
             </button>
@@ -266,6 +387,61 @@ const deleteSubCategory = async (id: number) => {
           <div v-else class="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
             No sub categories yet.
           </div>
+        </div>
+      </div>
+
+      <div class="mt-8">
+        <h2 class="text-2xl font-bold mb-4">Reusable Option Groups</h2>
+
+        <div
+          v-if="menuStore.optionGroups.length"
+          class="grid grid-cols-1 lg:grid-cols-3 gap-4"
+        >
+          <div
+            v-for="group in menuStore.optionGroups"
+            :key="group.id"
+            class="bg-white p-5 rounded-lg shadow"
+          >
+            <div class="flex justify-between items-start gap-3 mb-4">
+              <div>
+                <h3 class="font-bold text-xl">{{ group.name }}</h3>
+                <p class="text-sm text-gray-500 capitalize">
+                  {{ group.selection_type }} choice
+                </p>
+              </div>
+
+              <button
+                class="text-red-500 font-semibold"
+                @click="deleteOptionGroup(group.id)"
+              >
+                Delete
+              </button>
+            </div>
+
+            <div v-if="optionsForGroup(group.id).length" class="space-y-2">
+              <div
+                v-for="option in optionsForGroup(group.id)"
+                :key="option.id"
+                class="flex justify-between items-center bg-gray-100 rounded-lg px-3 py-2"
+              >
+                <span>{{ option.name }}</span>
+                <button
+                  class="text-red-500 text-sm font-semibold"
+                  @click="deleteOptionItem(option.id)"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
+              No options yet.
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="bg-white rounded-lg p-10 text-center text-gray-500 shadow">
+          No option groups yet.
         </div>
       </div>
     </div>

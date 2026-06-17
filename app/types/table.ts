@@ -12,4 +12,6 @@ export interface RestaurantTable {
   customerCount?: number;
   startTime?: string;
   timeLimit?: number;
+  sessionToken?: string;
+  sessionPin?: string;
 }

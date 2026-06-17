@@ -24,6 +24,8 @@ const createDefaultItem = () => ({
   image_url: "",
   category_id: undefined as number | undefined,
   sub_category_id: undefined as number | undefined,
+  allergensText: "",
+  optionGroupIds: [] as number[],
 });
 
 const newItem = ref(createDefaultItem());
@@ -33,6 +35,7 @@ onMounted(async () => {
   loading.value = true;
   await Promise.all([
     menuStore.loadMenu(),
+    menuStore.loadOptionGroups(),
     categoryStore.loadCategories(),
     categoryStore.loadSubCategories(),
   ]);
@@ -104,9 +107,31 @@ watch(categoryFilter, () => {
 });
 
 const openEditModal = (item: MenuItem) => {
-  selectedMenuItem.value = { ...item };
+  selectedMenuItem.value = { ...item, allergens: item.allergens ?? [] };
+  selectedEditOptionGroupIds.value = menuStore.getOptionGroupIdsForMenuItem(
+    item.id,
+  );
   showEditModal.value = true;
 };
+
+const selectedEditOptionGroupIds = ref<number[]>([]);
+
+const parseAllergens = (value: string) =>
+  value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+const allergensTextFor = (item: MenuItem) => (item.allergens ?? []).join(", ");
+
+const selectedAllergensText = computed({
+  get: () => (selectedMenuItem.value ? allergensTextFor(selectedMenuItem.value) : ""),
+  set: (value: string) => {
+    if (selectedMenuItem.value) {
+      selectedMenuItem.value.allergens = parseAllergens(value);
+    }
+  },
+});
 
 const validateMenuItem = (item: {
   name: string;
@@ -144,11 +169,19 @@ const createMenuItem = async () => {
     image_url: newItem.value.image_url,
     category_id: newItem.value.category_id!,
     sub_category_id: newItem.value.sub_category_id!,
+    allergens: parseAllergens(newItem.value.allergensText),
   });
 
   toastStore.open(result.message, result.success ? "success" : "error");
 
   if (!result.success) return;
+
+  if (result.itemId) {
+    await menuStore.setMenuItemOptionGroups(
+      result.itemId,
+      newItem.value.optionGroupIds,
+    );
+  }
 
   showAddModal.value = false;
   newItem.value = createDefaultItem();
@@ -169,7 +202,13 @@ const updateMenuItem = async () => {
   });
   toastStore.open(result.message, result.success ? "success" : "error");
 
-  if (result.success) showEditModal.value = false;
+  if (result.success) {
+    await menuStore.setMenuItemOptionGroups(
+      selectedMenuItem.value.id,
+      selectedEditOptionGroupIds.value,
+    );
+    showEditModal.value = false;
+  }
 };
 
 const deleteMenuItem = async (id: number) => {
@@ -338,6 +377,22 @@ const deleteMenuItem = async (id: number) => {
                 <span class="bg-gray-100 px-3 py-1 rounded-full">
                   {{ getSubCategoryName(item.sub_category_id) }}
                 </span>
+
+                <span
+                  v-for="allergen in item.allergens"
+                  :key="`${item.id}-${allergen}`"
+                  class="bg-red-50 text-red-700 px-3 py-1 rounded-full"
+                >
+                  {{ allergen }}
+                </span>
+
+                <span
+                  v-for="group in menuStore.getOptionGroupsForMenuItem(item.id)"
+                  :key="`${item.id}-group-${group.id}`"
+                  class="bg-blue-50 text-blue-700 px-3 py-1 rounded-full"
+                >
+                  {{ group.name }}
+                </span>
               </div>
 
               <div class="flex justify-end gap-2 mt-4">
@@ -367,23 +422,32 @@ const deleteMenuItem = async (id: number) => {
         <div class="bg-white p-6 rounded-xl w-[520px] max-w-[94vw]">
           <h2 class="text-2xl font-bold mb-4">Edit Menu Item</h2>
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Item Name
+          </label>
           <input
             v-model="selectedMenuItem.name"
-            placeholder="Name"
+            placeholder="e.g. Chicken Ramen"
             class="w-full border rounded-lg p-3 mb-3"
           />
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Description
+          </label>
           <textarea
             v-model="selectedMenuItem.description"
-            placeholder="Description"
+            placeholder="Short customer-facing description"
             class="w-full border rounded-lg p-3 mb-3"
           />
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Price
+          </label>
           <input
             v-model.number="selectedMenuItem.price"
             type="number"
             min="0"
-            placeholder="Price"
+            placeholder="0"
             class="w-full border rounded-lg p-3 mb-3"
           />
 
@@ -415,11 +479,44 @@ const deleteMenuItem = async (id: number) => {
             </option>
           </select>
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Image URL
+          </label>
           <input
             v-model="selectedMenuItem.image_url"
-            placeholder="Image URL"
-            class="w-full border rounded-lg p-3 mb-4"
+            placeholder="https://..."
+            class="w-full border rounded-lg p-3 mb-3"
           />
+
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Allergens
+          </label>
+          <input
+            v-model="selectedAllergensText"
+            placeholder="Allergens: egg, milk, wheat"
+            class="w-full border rounded-lg p-3 mb-3"
+          />
+
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Customer Selection Groups
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+            <label
+              v-for="group in menuStore.optionGroups"
+              :key="group.id"
+              class="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2"
+            >
+              <input
+                v-model="selectedEditOptionGroupIds"
+                type="checkbox"
+                :value="group.id"
+              />
+              <span>{{ group.name }}</span>
+              <span class="text-xs text-gray-500 capitalize">
+                {{ group.selection_type }}
+              </span>
+            </label>
+          </div>
 
           <div class="flex justify-end gap-3">
             <button
@@ -446,23 +543,32 @@ const deleteMenuItem = async (id: number) => {
         <div class="bg-white p-6 rounded-xl w-[520px] max-w-[94vw]">
           <h2 class="text-2xl font-bold mb-4">Add Menu Item</h2>
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Item Name
+          </label>
           <input
             v-model="newItem.name"
-            placeholder="Name"
+            placeholder="e.g. Chicken Ramen"
             class="w-full border rounded-lg p-3 mb-3"
           />
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Description
+          </label>
           <textarea
             v-model="newItem.description"
-            placeholder="Description"
+            placeholder="Short customer-facing description"
             class="w-full border rounded-lg p-3 mb-3"
           />
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Price
+          </label>
           <input
             v-model.number="newItem.price"
             type="number"
             min="0"
-            placeholder="Price"
+            placeholder="0"
             class="w-full border rounded-lg p-3 mb-3"
           />
 
@@ -496,11 +602,44 @@ const deleteMenuItem = async (id: number) => {
             </option>
           </select>
 
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Image URL
+          </label>
           <input
             v-model="newItem.image_url"
-            placeholder="Image URL"
-            class="w-full border rounded-lg p-3 mb-4"
+            placeholder="https://..."
+            class="w-full border rounded-lg p-3 mb-3"
           />
+
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Allergens
+          </label>
+          <input
+            v-model="newItem.allergensText"
+            placeholder="Allergens: egg, milk, wheat"
+            class="w-full border rounded-lg p-3 mb-3"
+          />
+
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Customer Selection Groups
+          </label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+            <label
+              v-for="group in menuStore.optionGroups"
+              :key="group.id"
+              class="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2"
+            >
+              <input
+                v-model="newItem.optionGroupIds"
+                type="checkbox"
+                :value="group.id"
+              />
+              <span>{{ group.name }}</span>
+              <span class="text-xs text-gray-500 capitalize">
+                {{ group.selection_type }}
+              </span>
+            </label>
+          </div>
 
           <div class="flex justify-end gap-3">
             <button

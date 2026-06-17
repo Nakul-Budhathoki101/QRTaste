@@ -11,6 +11,8 @@ interface AggregatedItem {
   price: number;
   quantity: number;
   lineTotal: number;
+  customizations?: string[];
+  customization_note?: string;
 }
 
 const props = defineProps<{
@@ -33,6 +35,7 @@ const paymentOptions: { label: string; value: PaymentMethod }[] = [
 const supabase = useSupabase();
 const settingsStore = useSettingsStore();
 const orderStore = useOrderStore();
+const couponStore = useCouponStore();
 
 const loading = ref(true);
 const paying = ref(false);
@@ -50,7 +53,7 @@ const aggregatedItems = computed<AggregatedItem[]>(() => {
 
   for (const order of orders.value) {
     for (const item of normalizeItems(order.items)) {
-      const key = `${item.name}_${item.price}`;
+      const key = `${item.name}_${item.price}_${(item.customizations || []).join(",")}_${item.customization_note || ""}`;
       const existing = itemMap.get(key);
 
       if (existing) {
@@ -62,6 +65,8 @@ const aggregatedItems = computed<AggregatedItem[]>(() => {
           price: item.price,
           quantity: item.quantity,
           lineTotal: item.price * item.quantity,
+          customizations: item.customizations,
+          customization_note: item.customization_note,
         });
       }
     }
@@ -75,10 +80,20 @@ const subtotal = computed(() =>
 );
 
 const taxAmount = computed(() =>
-  Math.round(subtotal.value * (settingsStore.taxRate / 100)),
+  Math.round(taxableSubtotal.value * (settingsStore.taxRate / 100)),
 );
 
-const grandTotal = computed(() => subtotal.value + taxAmount.value);
+const appliedCoupon = computed(() => couponStore.currentAppliedCoupon);
+
+const discountAmount = computed(() =>
+  couponStore.calculateDiscount(subtotal.value, appliedCoupon.value),
+);
+
+const taxableSubtotal = computed(() =>
+  Math.max(0, subtotal.value - discountAmount.value),
+);
+
+const grandTotal = computed(() => taxableSubtotal.value + taxAmount.value);
 
 const sessionDuration = computed(() => {
   if (!props.table.startTime) return "Unlimited";
@@ -158,6 +173,9 @@ const markAsPaid = async () => {
       total_price: grandTotal.value,
       payment_method: paymentMethod.value,
       is_paid: true,
+      status: "paid",
+      discount_amount: discountAmount.value,
+      coupon_code: appliedCoupon.value?.coupon_code || null,
       paid_at: new Date().toISOString(),
     },
   ]);
@@ -178,6 +196,10 @@ const markAsPaid = async () => {
     return;
   }
 
+  if (appliedCoupon.value) {
+    await couponStore.redeemAppliedCoupon(appliedCoupon.value.id);
+  }
+
   paying.value = false;
   emit("paid");
 };
@@ -185,6 +207,7 @@ const markAsPaid = async () => {
 onMounted(() => {
   settingsStore.loadSettings();
   fetchOrders();
+  couponStore.loadAppliedCouponForTable(props.table.name, props.table.startTime);
 });
 </script>
 
@@ -248,11 +271,24 @@ onMounted(() => {
               :key="index"
               class="row flex justify-between items-center py-2 border-b border-gray-100"
             >
-              <div class="flex-1">
+            <div class="flex-1">
                 <p class="font-medium">{{ item.name }}</p>
                 <p class="muted text-sm text-gray-400">
                   {{ settingsStore.currencyLabel }} {{ item.price }} x
                   {{ item.quantity }}
+                </p>
+                <p
+                  v-if="item.customizations?.length || item.customization_note"
+                  class="text-sm text-red-600 font-semibold"
+                >
+                  {{
+                    [
+                      ...(item.customizations || []),
+                      item.customization_note,
+                    ]
+                      .filter(Boolean)
+                      .join(" | ")
+                  }}
                 </p>
               </div>
 
@@ -266,6 +302,17 @@ onMounted(() => {
             <div class="row flex justify-between text-gray-600">
               <span>Subtotal</span>
               <span>{{ settingsStore.currencyLabel }} {{ subtotal }}</span>
+            </div>
+
+            <div
+              v-if="discountAmount"
+              class="row flex justify-between text-green-700 font-semibold"
+            >
+              <span>
+                Discount
+                <span v-if="appliedCoupon">({{ appliedCoupon.coupon_code }})</span>
+              </span>
+              <span>- {{ settingsStore.currencyLabel }} {{ discountAmount }}</span>
             </div>
 
             <div class="row flex justify-between text-gray-600">

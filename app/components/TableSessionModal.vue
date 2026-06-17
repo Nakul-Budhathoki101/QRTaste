@@ -29,17 +29,30 @@ const orderStore = useOrderStore();
 const toastStore = useToastStore();
 const reservationStore = useReservationStore();
 
-const localCustomerCount = ref(props.table.customerCount ?? 1);
-const localTimeLimit = ref(props.table.timeLimit ?? settings.defaultTimeLimit);
-const enableTimeLimit = ref(Boolean(props.table?.timeLimit));
+const getInitialCustomerCount = () =>
+  props.table.customerCount ?? props.table.seats ?? 1;
+
+const getInitialTimeLimit = () => {
+  if (props.table.timeLimit && props.table.timeLimit > 0) {
+    return props.table.timeLimit;
+  }
+
+  if (settings.defaultTimeLimit && settings.defaultTimeLimit > 0) {
+    return settings.defaultTimeLimit;
+  }
+
+  return 1;
+};
+
+const shouldEnableTimeLimit = () => Boolean(props.table.timeLimit);
+
+const localCustomerCount = ref(getInitialCustomerCount());
+const localTimeLimit = ref(getInitialTimeLimit());
+const enableTimeLimit = ref(shouldEnableTimeLimit());
 const selectedMoveTargetId = ref<number>();
 const selectedMergeTargetId = ref<number>();
 const now = ref(Date.now());
-const reservationCustomerName = ref("");
-const reservationCustomerPhone = ref("");
-const reservationGuestCount = ref(props.table.seats || 1);
-const reservationAt = ref("");
-const reservationNotes = ref("");
+const showReservationModal = ref(false);
 let timer: ReturnType<typeof setInterval>;
 
 const isOccupied = computed(() => props.table.status === "occupied");
@@ -95,11 +108,12 @@ const getNextReservationAfter = (reservationId: number) => {
   return (
     todayReservations.value
       .filter((reservation) => reservation.id !== reservationId)
-      .filter((reservation) => new Date(reservation.reserved_at).getTime() > nowMs)
+      .filter(
+        (reservation) => new Date(reservation.reserved_at).getTime() > nowMs,
+      )
       .sort(
         (a, b) =>
-          new Date(a.reserved_at).getTime() -
-          new Date(b.reserved_at).getTime(),
+          new Date(a.reserved_at).getTime() - new Date(b.reserved_at).getTime(),
       )[0] || null
   );
 };
@@ -121,7 +135,8 @@ const getSafeTimeLimitForSeatedReservation = (reservationId: number) => {
 const maxSessionMinutesBeforeReservation = computed(() => {
   if (!nextReservation.value) return null;
 
-  const latestEnd = new Date(nextReservation.value.reserved_at).getTime() - 10 * 60 * 1000;
+  const latestEnd =
+    new Date(nextReservation.value.reserved_at).getTime() - 10 * 60 * 1000;
   const minutes = Math.floor((latestEnd - Date.now()) / 60000);
 
   return Math.max(0, minutes);
@@ -164,7 +179,21 @@ const elapsedLabel = computed(() => {
 });
 
 const decidedTimeLimit = () =>
-  enableTimeLimit.value ? localTimeLimit.value : undefined;
+  enableTimeLimit.value && Number(localTimeLimit.value) > 0
+    ? Number(localTimeLimit.value)
+    : undefined;
+
+const resetSessionForm = () => {
+  localCustomerCount.value = getInitialCustomerCount();
+  localTimeLimit.value = getInitialTimeLimit();
+  enableTimeLimit.value = shouldEnableTimeLimit();
+};
+
+const handleTimeLimitToggle = () => {
+  if (!enableTimeLimit.value) return;
+
+  localTimeLimit.value = getInitialTimeLimit();
+};
 
 const validateReservationTimeLimit = () => {
   if (!nextReservation.value) return true;
@@ -179,7 +208,7 @@ const validateReservationTimeLimit = () => {
     return false;
   }
 
-  if (localTimeLimit.value > maxMinutes) {
+  if (Number(localTimeLimit.value) > maxMinutes) {
     toastStore.open(
       `Time limit must end 10 minutes before the ${formatReservationTime(
         nextReservation.value.reserved_at,
@@ -210,67 +239,6 @@ const handleUpdateSession = () => {
   });
 };
 
-const createReservation = async () => {
-  if (!reservationCustomerName.value.trim()) {
-    toastStore.open("Customer name is required", "error");
-    return;
-  }
-
-  if (!reservationAt.value) {
-    toastStore.open("Reservation time is required", "error");
-    return;
-  }
-
-  const reservedDate = new Date(reservationAt.value);
-
-  if (reservedDate.getTime() <= Date.now()) {
-    toastStore.open("Reservation time must be in the future", "error");
-    return;
-  }
-
-  if (reservationGuestCount.value > props.table.seats) {
-    toastStore.open(
-      `${props.table.name} only has ${props.table.seats} seat(s). Choose a larger table.`,
-      "error",
-    );
-    return;
-  }
-
-  if (
-    reservationStore.hasReservationConflict(
-      props.table.id,
-      reservedDate.toISOString(),
-    )
-  ) {
-    toastStore.open(
-      `${props.table.name} already has a reservation at this time.`,
-      "error",
-    );
-    return;
-  }
-
-  const result = await reservationStore.createReservation({
-    table_id: props.table.id,
-    table_name: props.table.name,
-    customer_name: reservationCustomerName.value.trim(),
-    customer_phone: reservationCustomerPhone.value.trim() || null,
-    guest_count: reservationGuestCount.value,
-    reserved_at: reservedDate.toISOString(),
-    status: "reserved",
-    notes: reservationNotes.value.trim() || null,
-  });
-
-  toastStore.open(result.message, result.success ? "success" : "error");
-
-  if (!result.success) return;
-
-  reservationCustomerName.value = "";
-  reservationCustomerPhone.value = "";
-  reservationGuestCount.value = props.table.seats || 1;
-  reservationAt.value = "";
-  reservationNotes.value = "";
-};
-
 const seatReservation = async (reservation: TableReservation) => {
   if (isOccupied.value) {
     toastStore.open("This table already has an active session.", "error");
@@ -278,7 +246,10 @@ const seatReservation = async (reservation: TableReservation) => {
   }
 
   if (isCleaning.value) {
-    toastStore.open("Make this table available before seating the reservation.", "error");
+    toastStore.open(
+      "Make this table available before seating the reservation.",
+      "error",
+    );
     return;
   }
 
@@ -336,7 +307,10 @@ const setCleaning = async () => {
   }
 
   const result = await tableStore.setCleaning(props.table.id);
-  toastStore.open(result?.message ?? "Table set to cleaning", result?.success ? "success" : "error");
+  toastStore.open(
+    result?.message ?? "Table set to cleaning",
+    result?.success ? "success" : "error",
+  );
   if (result?.success) emit("close");
 };
 
@@ -350,7 +324,10 @@ const setAvailable = async () => {
   }
 
   const result = await tableStore.resetTable(props.table.id);
-  toastStore.open(result?.message ?? "Table is available", result?.success ? "success" : "error");
+  toastStore.open(
+    result?.message ?? "Table is available",
+    result?.success ? "success" : "error",
+  );
   if (result?.success) emit("close");
 };
 
@@ -383,6 +360,8 @@ const mergeSession = async () => {
 };
 
 onMounted(() => {
+  settings.loadSettings();
+  resetSessionForm();
   orderStore.loadOrders();
   reservationStore.loadReservations();
   timer = setInterval(() => {
@@ -390,34 +369,63 @@ onMounted(() => {
   }, 1000);
 });
 
+watch(
+  () => [
+    props.table.id,
+    props.table.customerCount,
+    props.table.seats,
+    props.table.timeLimit,
+    props.table.status,
+    settings.defaultTimeLimit,
+  ],
+  resetSessionForm,
+);
+
 onUnmounted(() => {
   clearInterval(timer);
 });
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div
+    class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+  >
     <div
       class="bg-white rounded-2xl w-[760px] max-w-[96vw] max-h-[92vh] overflow-y-auto shadow-2xl"
     >
       <div class="bg-gray-950 text-white p-6 rounded-t-2xl">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <p class="text-sm uppercase tracking-wide text-gray-400">
+            <!-- <p class="text-sm uppercase tracking-wide text-gray-400">
               Table Session
-            </p>
-            <h2 class="text-4xl font-bold">{{ table.name }}</h2>
+            </p> -->
+            <h2 class="text-4xl font-bold">
+              {{ table.name }}
+            </h2>
           </div>
 
           <button
-            class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20"
+            class="group flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white shadow-lg shadow-black/20 transition hover:rotate-90 hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-white/60"
+            aria-label="Close table session modal"
             @click="$emit('close')"
           >
-            x
+            <svg
+              class="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                stroke="currentColor"
+                stroke-width="2.6"
+                stroke-linecap="round"
+              />
+            </svg>
           </button>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6">
           <div class="bg-white/10 rounded-lg p-3">
             <p class="text-xs text-gray-300">Status</p>
             <p class="font-bold capitalize">{{ table.status }}</p>
@@ -425,17 +433,30 @@ onUnmounted(() => {
 
           <div class="bg-white/10 rounded-lg p-3">
             <p class="text-xs text-gray-300">Guests</p>
-            <p class="font-bold">{{ table.customerCount ?? localCustomerCount }}</p>
+            <p class="font-bold">
+              {{ table.customerCount ?? localCustomerCount }}
+            </p>
           </div>
 
           <div class="bg-white/10 rounded-lg p-3">
             <p class="text-xs text-gray-300">Elapsed</p>
-            <p class="font-bold">{{ table.startTime ? elapsedLabel : "Not started" }}</p>
+            <p class="font-bold">
+              {{ table.startTime ? elapsedLabel : "Not started" }}
+            </p>
           </div>
 
           <div class="bg-white/10 rounded-lg p-3">
             <p class="text-xs text-gray-300">Limit</p>
-            <p class="font-bold">{{ table.timeLimit ? `${table.timeLimit} min` : "Unlimited" }}</p>
+            <p class="font-bold">
+              {{ table.timeLimit ? `${table.timeLimit} min` : "Unlimited" }}
+            </p>
+          </div>
+
+          <div v-if="table.sessionPin" class="bg-emerald-500/20 rounded-lg p-3">
+            <p class="text-xs text-emerald-100">Order PIN</p>
+            <p class="font-bold text-2xl tracking-widest">
+              {{ table.sessionPin }}
+            </p>
           </div>
         </div>
 
@@ -443,15 +464,17 @@ onUnmounted(() => {
           v-if="isOccupied && hasUnpaidOrders"
           class="mt-4 bg-amber-400 text-amber-950 rounded-lg p-3 font-semibold"
         >
-          This table has {{ unbilledSessionOrders.length }} unpaid order(s). Checkout, move, or merge before cleaning or clearing the table.
+          This table has {{ unbilledSessionOrders.length }} unpaid order(s).
+          Checkout, move, or merge before cleaning or clearing the table.
         </div>
 
         <div
           v-else-if="!isOccupied && nextReservation"
           class="mt-4 bg-purple-400 text-purple-950 rounded-lg p-3 font-semibold"
         >
-          Reserved today at {{ formatReservationTime(nextReservation.reserved_at) }}.
-          Session time must end 10 minutes before this reservation.
+          Reserved today at
+          {{ formatReservationTime(nextReservation.reserved_at) }}. Session time
+          must end 10 minutes before this reservation.
         </div>
       </div>
 
@@ -468,7 +491,11 @@ onUnmounted(() => {
           />
 
           <label class="mb-4 flex items-center gap-2 cursor-pointer">
-            <input v-model="enableTimeLimit" type="checkbox" />
+            <input
+              v-model="enableTimeLimit"
+              type="checkbox"
+              @change="handleTimeLimitToggle"
+            />
             <span class="font-bold">Enable Time Limit</span>
           </label>
 
@@ -485,7 +512,7 @@ onUnmounted(() => {
 
         <section class="bg-gray-50 rounded-xl p-4 border">
           <h3 class="font-bold text-lg mb-4">
-            {{ isOccupied ? "Real World Actions" : "Reservations Today" }}
+            {{ isOccupied ? "Merge | Move the tables" : "Reservations Today" }}
           </h3>
 
           <div v-if="isOccupied" class="space-y-4">
@@ -562,11 +589,14 @@ onUnmounted(() => {
                         class="text-[11px] font-bold px-2 py-0.5 rounded-full"
                         :class="{
                           'bg-red-100 text-red-700':
-                            getReservationTimeState(reservation.reserved_at) === 'late',
+                            getReservationTimeState(reservation.reserved_at) ===
+                            'late',
                           'bg-amber-100 text-amber-700':
-                            getReservationTimeState(reservation.reserved_at) === 'due',
+                            getReservationTimeState(reservation.reserved_at) ===
+                            'due',
                           'bg-purple-100 text-purple-700':
-                            getReservationTimeState(reservation.reserved_at) === 'upcoming',
+                            getReservationTimeState(reservation.reserved_at) ===
+                            'upcoming',
                         }"
                       >
                         {{ getReservationTimeLabel(reservation.reserved_at) }}
@@ -612,64 +642,21 @@ onUnmounted(() => {
             </div>
 
             <div class="border-t pt-4">
-              <h4 class="font-bold mb-3">Add Reservation</h4>
-
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input
-                  v-model="reservationCustomerName"
-                  class="border border-gray-200 rounded-xl p-3 bg-white"
-                  placeholder="Customer name"
-                />
-
-                <input
-                  v-model="reservationCustomerPhone"
-                  class="border border-gray-200 rounded-xl p-3 bg-white"
-                  placeholder="Phone"
-                />
-
-                <input
-                  v-model.number="reservationGuestCount"
-                  type="number"
-                  min="1"
-                  class="border border-gray-200 rounded-xl p-3 bg-white"
-                  placeholder="Guests"
-                />
-
-                <input
-                  v-model="reservationAt"
-                  type="datetime-local"
-                  class="border border-gray-200 rounded-xl p-3 bg-white"
-                />
-              </div>
-
-              <textarea
-                v-model="reservationNotes"
-                class="w-full border border-gray-200 rounded-xl p-3 bg-white mt-3"
-                placeholder="Notes"
-              />
-
               <button
                 class="w-full bg-purple-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-purple-700"
-                @click="createReservation"
+                @click="showReservationModal = true"
               >
-                Save Reservation
+                Add Reservation
               </button>
             </div>
           </div>
         </section>
       </div>
 
-      <div class="p-6 pt-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <button
-          class="bg-gray-200 px-4 py-3 rounded-xl font-bold hover:bg-gray-300"
-          @click="$emit('close')"
-        >
-          Cancel
-        </button>
-
+      <div class="flex flex-wrap justify-end gap-3 p-6 pt-0">
         <button
           v-if="isOccupied"
-          class="bg-amber-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-amber-600"
+          class="w-full bg-amber-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-amber-600 sm:w-auto sm:min-w-32"
           @click="$emit('checkout')"
         >
           Checkout
@@ -677,7 +664,7 @@ onUnmounted(() => {
 
         <button
           v-if="isOccupied"
-          class="bg-blue-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-blue-600"
+          class="w-full bg-blue-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-blue-600 sm:w-auto sm:min-w-32"
           @click="setCleaning"
         >
           Cleaning
@@ -685,7 +672,7 @@ onUnmounted(() => {
 
         <button
           v-if="isOccupied || isCleaning"
-          class="bg-gray-800 text-white px-4 py-3 rounded-xl font-bold hover:bg-gray-900"
+          class="w-full bg-gray-800 text-white px-4 py-3 rounded-xl font-bold hover:bg-gray-900 sm:w-auto sm:min-w-32"
           @click="setAvailable"
         >
           Available
@@ -693,7 +680,7 @@ onUnmounted(() => {
 
         <button
           v-if="isOccupied"
-          class="bg-green-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-green-600"
+          class="w-full bg-green-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-green-600 sm:w-auto sm:min-w-32"
           @click="handleUpdateSession"
         >
           Update
@@ -701,12 +688,20 @@ onUnmounted(() => {
 
         <button
           v-else-if="!isCleaning"
-          class="bg-green-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-green-600"
+          class="w-full bg-green-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-green-600 sm:w-auto sm:min-w-40"
           @click="handleStartSession"
         >
           Start Session
         </button>
       </div>
     </div>
+
+    <ReservationModal
+      v-if="showReservationModal"
+      :initial-table-id="table.id"
+      lock-table
+      @close="showReservationModal = false"
+      @saved="reservationStore.loadReservations()"
+    />
   </div>
 </template>

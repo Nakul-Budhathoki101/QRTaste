@@ -22,5 +22,8 @@ export interface TableBill {
   is_paid: boolean;
   created_at: string;
   paid_at?: string;
-  status?: BillStatus;
+  status: BillStatus;
+  discount_amount?: number;
+  coupon_code?: string | null;
+  cancelled_at?: string | null;
 }

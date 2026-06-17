@@ -11,6 +11,8 @@ export interface RestaurantTable {
   customerCount?: number;
   startTime?: string;
   timeLimit?: number;
+  sessionToken?: string;
+  sessionPin?: string;
 }
 
 export const useTableStore = defineStore("table", () => {
@@ -26,7 +28,16 @@ export const useTableStore = defineStore("table", () => {
     customerCount: table.customerCount ?? table.customer_count ?? undefined,
     startTime: table.startTime ?? table.start_time ?? undefined,
     timeLimit: table.timeLimit ?? table.time_limit ?? undefined,
+    sessionToken: table.session_token ?? table.sessionToken ?? undefined,
+    sessionPin: table.session_pin ?? table.sessionPin ?? undefined,
   });
+
+  const createSessionToken = () =>
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+
+  const createSessionPin = () =>
+    String(Math.floor(1000 + Math.random() * 9000));
 
   // backend functions..
   const loadTables = async () => {
@@ -82,6 +93,8 @@ export const useTableStore = defineStore("table", () => {
       customerCount: number | null;
       startTime: string | null;
       timeLimit: number | null;
+      session_token: string | null;
+      session_pin: string | null;
     }>,
   ) => {
     const { error } = await supabase
@@ -134,11 +147,15 @@ export const useTableStore = defineStore("table", () => {
     },
   ) => {
     const startTime = new Date().toISOString();
+    const sessionToken = createSessionToken();
+    const sessionPin = createSessionPin();
     const result = await updateTable(tableId, {
       status: "occupied",
       customerCount: payload.customerCount,
       timeLimit: payload.timeLimit ?? null,
       startTime,
+      session_token: sessionToken,
+      session_pin: sessionPin,
     });
 
     if (!result.success) return result;
@@ -150,6 +167,8 @@ export const useTableStore = defineStore("table", () => {
       table.customerCount = payload.customerCount;
       table.timeLimit = payload.timeLimit;
       table.startTime = startTime;
+      table.sessionToken = sessionToken;
+      table.sessionPin = sessionPin;
     }
 
     return result;
@@ -183,6 +202,8 @@ export const useTableStore = defineStore("table", () => {
       customerCount: null,
       timeLimit: null,
       startTime: null,
+      session_token: null,
+      session_pin: null,
     });
 
     if (!result.success) return result;
@@ -194,6 +215,8 @@ export const useTableStore = defineStore("table", () => {
       table.customerCount = undefined;
       table.timeLimit = undefined;
       table.startTime = undefined;
+      table.sessionToken = undefined;
+      table.sessionPin = undefined;
     }
 
     return result;
@@ -204,6 +227,8 @@ export const useTableStore = defineStore("table", () => {
       customerCount: null,
       timeLimit: null,
       startTime: null,
+      session_token: null,
+      session_pin: null,
     });
 
     if (!result.success) return result;
@@ -215,6 +240,8 @@ export const useTableStore = defineStore("table", () => {
       table.customerCount = undefined;
       table.timeLimit = undefined;
       table.startTime = undefined;
+      table.sessionToken = undefined;
+      table.sessionPin = undefined;
     }
 
     return result;
@@ -273,6 +300,8 @@ export const useTableStore = defineStore("table", () => {
       customerCount: source.customerCount ?? 1,
       timeLimit: source.timeLimit ?? null,
       startTime: source.startTime ?? new Date().toISOString(),
+      session_token: source.sessionToken ?? createSessionToken(),
+      session_pin: source.sessionPin ?? createSessionPin(),
     });
 
     if (!targetResult.success) return targetResult;
@@ -282,6 +311,8 @@ export const useTableStore = defineStore("table", () => {
       customerCount: null,
       timeLimit: null,
       startTime: null,
+      session_token: null,
+      session_pin: null,
     });
 
     await loadTables();
@@ -352,6 +383,8 @@ export const useTableStore = defineStore("table", () => {
       customerCount: (target.customerCount ?? 0) + (source.customerCount ?? 0),
       timeLimit: target.timeLimit ?? source.timeLimit ?? null,
       startTime: earliestStart,
+      session_token: target.sessionToken ?? source.sessionToken ?? createSessionToken(),
+      session_pin: target.sessionPin ?? createSessionPin(),
     });
 
     if (!targetResult.success) return targetResult;
@@ -361,6 +394,8 @@ export const useTableStore = defineStore("table", () => {
       customerCount: null,
       timeLimit: null,
       startTime: null,
+      session_token: null,
+      session_pin: null,
     });
 
     await loadTables();

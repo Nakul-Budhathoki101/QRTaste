@@ -78,36 +78,6 @@ const saveAndClose = () => {
         <span class="font-bold">Enable sound alert</span>
       </label>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-center my-3">
-        <NuxtLink
-          to="/admin/category"
-          class="bg-green-500 text-white px-4 py-2 rounded-lg"
-        >
-          Categories
-        </NuxtLink>
-
-        <NuxtLink
-          to="/admin/menu"
-          class="bg-green-500 text-white px-4 py-2 rounded-lg"
-        >
-          Menu
-        </NuxtLink>
-
-        <NuxtLink
-          to="/admin/table"
-          class="bg-green-500 text-white px-4 py-2 rounded-lg"
-        >
-          Tables
-        </NuxtLink>
-
-        <NuxtLink
-          to="/admin/billing"
-          class="bg-green-500 text-white px-4 py-2 rounded-lg"
-        >
-          Billing
-        </NuxtLink>
-      </div>
-
       <div class="flex justify-end gap-3 mt-6">
         <button
           class="bg-gray-200 text-gray-900 px-4 py-2 rounded-lg"

@@ -9,6 +9,8 @@ create table if not exists public.tables (
     "customerCount" integer,
     "startTime" timestamptz,
     "timeLimit" integer,
+    session_token text,
+    session_pin text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -18,6 +20,8 @@ alter table public.tables add column if not exists status text not null default 
 alter table public.tables add column if not exists "customerCount" integer;
 alter table public.tables add column if not exists "startTime" timestamptz;
 alter table public.tables add column if not exists "timeLimit" integer;
+alter table public.tables add column if not exists session_token text;
+alter table public.tables add column if not exists session_pin text;
 alter table public.tables add column if not exists created_at timestamptz not null default now();
 alter table public.tables add column if not exists updated_at timestamptz not null default now();
 
@@ -178,6 +182,8 @@ begin
 end $$;
 
 create index if not exists idx_tables_status on public.tables(status);
+create index if not exists idx_tables_session_token on public.tables(session_token);
+create index if not exists idx_tables_session_pin on public.tables(session_pin);
 create index if not exists idx_table_reservations_table_time on public.table_reservations(table_id, reserved_at);
 create index if not exists idx_table_reservations_status_time on public.table_reservations(status, reserved_at);
 create index if not exists idx_orders_status_created_at on public.orders(status, created_at desc);
